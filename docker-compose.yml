@@ -1,0 +1,26 @@
+# docker-compose for Synology Container Manager.
+#
+# Two ways to populate the `ai-kb:latest` image:
+#   A) Build on a dev machine, `docker save` -> scp -> `docker load` on the NAS.
+#   B) Upload source to the NAS and let Container Manager build from this file.
+#
+# Either way, this compose only describes the *runtime*. Bind-mounts assume
+# the directory layout from KB-MVP.md §3.1.
+
+services:
+  ai-kb:
+    image: ai-kb:latest
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: ai-kb
+    restart: unless-stopped
+    # Localhost-only; Synology Web Station terminates TLS and reverse-proxies.
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - /volume1/docker/ai-kb/data:/app/data
+      - /volume1/docker/ai-kb/uploads:/app/uploads
+      - /volume1/docker/ai-kb/backups:/app/backups
+    env_file:
+      - /volume1/docker/ai-kb/.env

@@ -1,0 +1,56 @@
+# --- Dependencies (reinstalled inside the image) ---
+node_modules
+npm-debug.log*
+
+# --- Build artifacts (rebuilt inside the image) ---
+.next
+out
+dist
+build
+*.tsbuildinfo
+
+# --- Secrets (provided at runtime via env_file) ---
+.env
+.env.local
+.env.*.local
+
+# --- Runtime data (mounted as volumes at runtime) ---
+data
+uploads
+backups
+
+# --- VCS ---
+.git
+.gitignore
+.gitattributes
+
+# --- IDE / editor ---
+.vscode
+.idea
+*.swp
+*.swo
+
+# --- OS junk ---
+.DS_Store
+Thumbs.db
+
+# --- Logs ---
+*.log
+logs
+
+# --- Coverage / test junk ---
+coverage
+.nyc_output
+
+# --- Working / operator docs (not needed inside the container) ---
+README.md
+docs
+CONTRACTS.md
+KB-MVP.md
+
+# --- Local agent metadata ---
+.omo
+
+# --- Dev-only scripts (production image does not run them) ---
+scripts/smoke-db.ts
+scripts/smoke-*

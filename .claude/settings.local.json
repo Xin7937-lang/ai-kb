@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node *)",
+      "Bash(npx tsx *)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(npm run *)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(npm view *)",
+      "Bash(npm install *)",
+      "Bash(curl -sI http://localhost:3001/login)",
+      "Bash(curl -s http://localhost:3001/login)",
+      "Bash(netstat -ano)",
+      "Bash(tasklist //FI \"IMAGENAME eq node.exe\")",
+      "Bash(taskkill //F //PID 31436)",
+      "WebFetch(domain:docs.bigmodel.cn)",
+      "WebSearch",
+      "Skill(run)",
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "mcp__plugin_playwright_playwright__browser_click",
+      "mcp__plugin_playwright_playwright__browser_snapshot",
+      "mcp__plugin_playwright_playwright__browser_take_screenshot",
+      "mcp__plugin_playwright_playwright__browser_type",
+      "mcp__plugin_playwright_playwright__browser_press_key",
+      "Bash(npm ls *)",
+      "mcp__plugin_playwright_playwright__browser_console_messages",
+      "mcp__MiniMax__understand_image",
+      "Bash(npx claude-mem *)",
+      "mcp__plugin_playwright_playwright__browser_wait_for"
+    ]
+  }
+}
