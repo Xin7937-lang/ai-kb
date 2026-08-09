@@ -66,7 +66,8 @@ npm run dev
 ├── docker/                 # Dockerfile + compose（S9）
 ├── docs/
 │   ├── plan-mvp.md         # 指向 KB-MVP.md
-│   └── deploy-synology.md  # 群晖部署手册（S10）
+│   ├── deploy-synology.md  # 群晖 Web Station 部署（S10）
+│   └── deploy-qnap.md      # 威联通部署（S10）
 ├── scripts/                # 一次性脚本
 ├── middleware.ts           # 路由保护（S3 实现）
 ├── next.config.mjs
@@ -89,7 +90,18 @@ npm run dev
 | S8 AI 摘要 | ✅ | SSE 流式 |
 | S9 容器化 | ✅ | Dockerfile + compose |
 | S10 部署文档 | ✅ | 群晖 + 威联通手册 |
-| RAG 对话 | ✅ | `/chat` 基于 FTS5 + sqlite-vec 混合检索（RRF 融合），web search 模式 |
+| RAG 对话 | ✅ | `/chat` 混合检索：FTS5 BM25 + sqlite-vec KNN (2048d)，RRF 融合 + 多信号重排（时效 × 标题命中）+ 单条多样性上限；可选 web search 兜底（设置 `settings/chat-web-search`） |
 | 编辑器增强 | ✅ | 30 秒自动保存、对话一键存为笔记 |
 
 完整规划见 [`docs/plan-mvp.md`](./docs/plan-mvp.md) 与 [`KB-MVP.md`](./KB-MVP.md)。
+
+## ⚠️ 启动与部署注意
+
+- **密钥长度**：`JWT_SECRET` 与 `ENCRYPTION_KEY` 各必须是 **64 个 hex 字符**（即 32 字节）。  
+  `lib/env.ts` 在模块加载时校验，缺失或长度不对会**直接抛错**启动失败。
+- **首次启动密码**：`.env` 里 `APP_PASSWORD` 可填可不填；填了启动时会自动 bcrypt 入库（`settings.password_hash`），之后从 `.env` 删掉。建议在管理界面改密码前保留此变量。
+- **API Key 加密格式**：存进 `model_configs.api_key_enc` 的是 AES-256-GCM 密文，布局为  
+  `base64( IV(12B) ‖ TAG(16B) ‖ CipherText )`。密钥就是 `ENCRYPTION_KEY`，改了密钥所有已存 API Key 都需要重录。
+- **群晖 WebStation 上的 SSE**：`/api/chat` 与 `/api/notes/*/summarize` 用 SSE 流式输出。WebStation 默认不开 WebSocket，SSE 事件可能被代理缓冲到响应结束才下发，浏览器看起来像"卡住"。若遇到此问题按 `docs/deploy-synology.md` 调整反代 buffering。
+- **本地 agent 状态**：仓库根的 `.omo/` 与各子项目里的 `.playwright-mcp/` 是本地 agent 运行状态，**不要 commit**。根 `.gitignore` 已屏蔽。
+- **手动改数据库**：唯一已知的"安全路径"是 `npx tsx scripts/smoke-db.ts`（迁移/加解密/认证变更后跑一次）。不要直接编辑 `data/kb.db`。
