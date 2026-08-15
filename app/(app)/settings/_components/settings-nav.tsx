@@ -5,12 +5,20 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Bot, Globe, KeyRound, Settings as GeneralIcon, Tag as TagIcon } from 'lucide-react';
+import {
+  Bot,
+  Globe,
+  KeyRound,
+  Puzzle,
+  Settings as GeneralIcon,
+  Tag as TagIcon,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const ITEMS = [
   { href: '/settings/general', label: '常规', icon: GeneralIcon },
   { href: '/settings/models', label: '模型', icon: Bot },
+  { href: '/settings/agent', label: 'Agent', icon: Puzzle },
   { href: '/settings/tags', label: '标签', icon: TagIcon },
   { href: '/settings/search', label: '搜索', icon: Globe },
   { href: '/settings/account', label: '账户与密码', icon: KeyRound },
