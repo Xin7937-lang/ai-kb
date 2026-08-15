@@ -6,10 +6,12 @@
 // Lifecycle of a single agent action:
 //   1. INSERT pending row (actionId generated here).
 //   2. Run the tool's actual work.
-//      - on success → UPDATE row to result='ok' (or 'ok_with_embedding_disabled')
-//        + target_note_id.
-//      - on work() returning ok=false → UPDATE to result='error' + error_message.
-//      - on work() throwing → UPDATE to result='error' + error_message.
+//      - on success → markAgentActionResult with 'ok' or
+//        'ok_with_embedding_disabled' + target_note_id.
+//      - on work() returning ok=false → markAgentActionResult with
+//        'error' + error_message.
+//      - on work() throwing → markAgentActionResult with 'error' +
+//        error_message.
 //   3. Return a structured result to the caller.
 //
 // The pending row exists even if the process crashes mid-tool — future
@@ -18,6 +20,11 @@
 import { nanoid } from 'nanoid';
 
 import { getDb } from '@/lib/db/client';
+
+export type AgentAuditResultCode =
+  | 'ok'
+  | 'ok_with_embedding_disabled'
+  | 'error';
 
 export type AgentWorkResult =
   | {
@@ -33,6 +40,34 @@ export type AgentWorkResult =
 export type AgentAuditOutcome =
   | { ok: true; actionId: string; targetNoteId: string | null }
   | { ok: false; actionId: string; error: string; message: string };
+
+// Marks an existing agent_action row as terminal. On 'ok' /
+// 'ok_with_embedding_disabled' we also persist the target_note_id
+// (may be null for actions that don't touch a specific note). On
+// 'error' we persist the error_message instead.
+function markAgentActionResult(
+  actionId: string,
+  code: AgentAuditResultCode,
+  detail: { targetNoteId: string | null } | { errorMessage: string },
+): void {
+  if (code === 'error') {
+    getDb()
+      .prepare(
+        `UPDATE agent_actions
+           SET result = ?, error_message = ?
+         WHERE id = ?`,
+      )
+      .run(code, (detail as { errorMessage: string }).errorMessage, actionId);
+    return;
+  }
+  getDb()
+    .prepare(
+      `UPDATE agent_actions
+         SET result = ?, target_note_id = ?
+       WHERE id = ?`,
+    )
+    .run(code, (detail as { targetNoteId: string | null }).targetNoteId, actionId);
+}
 
 export async function withAgentAudit(
   actionType: string,
@@ -53,23 +88,14 @@ export async function withAgentAudit(
   try {
     const workResult = await work();
     if (workResult.ok) {
-      getDb()
-        .prepare(
-          `UPDATE agent_actions
-             SET result = ?, target_note_id = ?
-           WHERE id = ?`,
-        )
-        .run(workResult.result, workResult.targetNoteId, actionId);
+      markAgentActionResult(actionId, workResult.result, {
+        targetNoteId: workResult.targetNoteId,
+      });
       return { ok: true, actionId, targetNoteId: workResult.targetNoteId };
     }
-    // Work returned ok=false — still treat as audit-recorded failure.
-    getDb()
-      .prepare(
-        `UPDATE agent_actions
-           SET result = 'error', error_message = ?
-         WHERE id = ?`,
-      )
-      .run(workResult.message, actionId);
+    markAgentActionResult(actionId, 'error', {
+      errorMessage: workResult.message,
+    });
     return {
       ok: false,
       actionId,
@@ -78,13 +104,7 @@ export async function withAgentAudit(
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    getDb()
-      .prepare(
-        `UPDATE agent_actions
-           SET result = 'error', error_message = ?
-         WHERE id = ?`,
-      )
-      .run(msg, actionId);
+    markAgentActionResult(actionId, 'error', { errorMessage: msg });
     return { ok: false, actionId, error: 'work_threw', message: msg };
   }
 }

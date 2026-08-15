@@ -17,8 +17,7 @@ import { createNote } from '@/lib/notes/queries';
 import { withAgentAudit } from './agent-audit';
 
 // Wrap plain text into a minimal TipTap doc so the note renders
-// sensibly in the existing editor. Future enhancements can build
-// richer docs from parsed markdown, etc.
+// sensibly in the existing editor.
 function textToDoc(text: string): JSONContent {
   return {
     type: 'doc',
