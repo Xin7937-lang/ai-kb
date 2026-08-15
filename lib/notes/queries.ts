@@ -354,6 +354,7 @@ export function listNotes(params: ListNotesParams = {}): ListNotesResult {
           `SELECT n.*, NULL AS tags
              FROM notes n
             WHERE NOT EXISTS (SELECT 1 FROM note_tags nt WHERE nt.note_id = n.id)
+              AND n.deleted_at IS NULL
             ORDER BY n.updated_at DESC
             LIMIT ? OFFSET ?`,
         )
@@ -368,7 +369,8 @@ export function listNotes(params: ListNotesParams = {}): ListNotesResult {
           `SELECT COUNT(DISTINCT n.id) AS c
              FROM notes n
              INNER JOIN note_tags nt ON nt.note_id = n.id
-            WHERE nt.tag_id = ?`,
+            WHERE nt.tag_id = ?
+              AND n.deleted_at IS NULL`,
         )
         .get(tagId) ?? { c: 0 }
     ).c;
@@ -383,6 +385,7 @@ export function listNotes(params: ListNotesParams = {}): ListNotesResult {
            FROM notes n
            INNER JOIN note_tags nt2 ON nt2.note_id = n.id
           WHERE nt2.tag_id = ?
+            AND n.deleted_at IS NULL
           ORDER BY n.updated_at DESC
           LIMIT ? OFFSET ?`,
       )
@@ -1144,6 +1147,7 @@ export function listTagTree(opts: { maxPerTag?: number } = {}): TagWithNotes[] {
               n.summary_state, n.updated_at, n.created_at
          FROM notes n
          JOIN note_tags nt ON nt.note_id = n.id
+        WHERE n.deleted_at IS NULL
         ORDER BY n.updated_at DESC`,
     )
     .all();
@@ -1462,25 +1466,31 @@ export function getNoteStats(opts: { topTagLimit?: number } = {}): NoteStats {
   const now = Date.now();
 
   const total =
-    db.prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM notes').get()?.c ?? 0;
+    db
+      .prepare<[], { c: number }>(
+        'SELECT COUNT(*) AS c FROM notes WHERE deleted_at IS NULL',
+      )
+      .get()?.c ?? 0;
 
   const lastWeek =
     db
       .prepare<[number], { c: number }>(
-        'SELECT COUNT(*) AS c FROM notes WHERE created_at >= ?',
+        'SELECT COUNT(*) AS c FROM notes WHERE created_at >= ? AND deleted_at IS NULL',
       )
       .get(now - 7 * ONE_DAY_MS)?.c ?? 0;
 
   const lastMonth =
     db
       .prepare<[number], { c: number }>(
-        'SELECT COUNT(*) AS c FROM notes WHERE created_at >= ?',
+        'SELECT COUNT(*) AS c FROM notes WHERE created_at >= ? AND deleted_at IS NULL',
       )
       .get(now - 30 * ONE_DAY_MS)?.c ?? 0;
 
   const lastUpdatedAt =
     db
-      .prepare<[], { t: number | null }>('SELECT MAX(updated_at) AS t FROM notes')
+      .prepare<[], { t: number | null }>(
+        'SELECT MAX(updated_at) AS t FROM notes WHERE deleted_at IS NULL',
+      )
       .get()?.t ?? null;
 
   const topTags = listTagsWithCount().slice(0, topTagLimit);
