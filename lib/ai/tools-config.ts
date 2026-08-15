@@ -26,12 +26,11 @@ export type ToolsConfig = Record<string, CoreTool>;
 export function buildToolsConfig(): ToolsConfig {
   if (!getAgentToolsEnabled()) return {};
   const limiter = makeRateLimiter(getAgentToolLimit());
-  // withRateLimit returns a narrower type (just `execute`) than
-  // CoreTool (which also carries `parameters`, `description`, etc.).
-  // The wrapper is a structural superset via the spread, but TS
-  // can't prove that; cast through unknown to assign back.
+  // withRateLimit preserves description / parameters / etc. via the
+  // spread inside the helper and is generic in the input tool type,
+  // so the returned CoreTool types flow through unchanged.
   return {
-    create_note: withRateLimit(createNoteTool, limiter) as unknown as CoreTool,
-    read_note: withRateLimit(readNoteTool, limiter) as unknown as CoreTool,
+    create_note: withRateLimit(createNoteTool, limiter),
+    read_note: withRateLimit(readNoteTool, limiter),
   };
 }

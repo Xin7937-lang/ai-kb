@@ -46,13 +46,8 @@ async function main(): Promise<void> {
       check: () => promptText.includes('read_note'),
     },
     {
-      name: 'does NOT claim to have delete_note',
-      check: () =>
-        !promptText.includes('delete_note') ||
-        // Or: if mentioned, only in "you do not have" context. Cheap
-        // check: not in "可用工具" or "工具列表" headings.
-        !/可用工具|工具列表/.test(promptText) ||
-        true,
+      name: 'does NOT mention delete_note (model has no such tool)',
+      check: () => !promptText.includes('delete_note'),
     },
 
     // S7 — no-fabrication: must forbid claiming actions that

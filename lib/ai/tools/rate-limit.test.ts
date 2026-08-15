@@ -5,11 +5,14 @@
 //
 // Run: npx tsx lib/ai/tools/rate-limit.test.ts
 
-import { makeRateLimiter, withRateLimit } from './rate-limit';
-// Re-declare a minimal tool type so the test can call the generic
-// with unknown-shaped args. Production helper stays typed; the test
-// fixture deliberately mirrors the Vercel AI SDK's PromiseLike
-// signature so the wrapper's generic is inferred end-to-end.
+import {
+  TOOL_LIMIT_EXCEEDED_CODE,
+  TOOL_LIMIT_EXCEEDED_MESSAGE,
+  makeRateLimiter,
+  withRateLimit,
+} from './rate-limit';
+// Local fixture type mirroring Vercel AI SDK's PromiseLike execute
+// signature so the wrapper's generics are inferred end-to-end.
 type Tool = {
   execute: (...args: unknown[]) => PromiseLike<string>;
 };
@@ -19,25 +22,26 @@ type Case = {
   check: () => boolean;
 };
 
-let independent1: number | null = null;
-let independent2: number | null = null;
-let firstCount: number | null = null;
-let ok1: unknown = null;
-let ok2: unknown = null;
-let ok3: unknown = null;
-let over4: unknown = null;
-let originalCalledTimes = 0;
-let stillCalledAfterOver: number | null = null;
+let independentFirst: number | null = null;
+let independentSecond: number | null = null;
+let firstResult: unknown = null;
+let secondResult: unknown = null;
+let thirdResult: unknown = null;
+let overflowResult: unknown = null;
+let overflowHasMessage: boolean | null = null;
+let overflowHasCorrectCode: boolean | null = null;
+let innerCallCountAfterAllowed: number | null = null;
+let innerCallCountAfterOverflow: number | null = null;
+let resetCountOnFreshLimiter: number | null = null;
 
 async function main(): Promise<void> {
-  // Independent limiters do not share state
+  // Independent limiters do not share state.
   const lA = makeRateLimiter(5);
   const lB = makeRateLimiter(2);
-  independent1 = lA.increment();
-  independent2 = lB.increment();
-  firstCount = lA.increment(); // second call on lA
+  independentFirst = lA.increment();
+  independentSecond = lB.increment();
 
-  // withRateLimit: N succeed, N+1 fails
+  // withRateLimit: N succeed, N+1 fails.
   const limiter = makeRateLimiter(3);
   let innerCalls = 0;
   const tool: Tool = {
@@ -46,55 +50,82 @@ async function main(): Promise<void> {
       return Promise.resolve(`inner-${innerCalls}`);
     },
   };
-  const wrapped = withRateLimit<unknown[], string>(tool, limiter);
-  ok1 = await wrapped.execute();
-  ok2 = await wrapped.execute();
-  ok3 = await wrapped.execute();
-  over4 = await wrapped.execute();
-  originalCalledTimes = innerCalls;
-  stillCalledAfterOver = innerCalls; // should equal 3 — the inner is NOT called on overflow
+  const wrapped = withRateLimit(tool, limiter);
+  firstResult = await wrapped.execute();
+  secondResult = await wrapped.execute();
+  thirdResult = await wrapped.execute();
+  innerCallCountAfterAllowed = innerCalls;
+  overflowResult = await wrapped.execute();
+  innerCallCountAfterOverflow = innerCalls;
+
+  // Overflow payload includes both error code and human message.
+  if (typeof overflowResult === 'object' && overflowResult !== null) {
+    const o = overflowResult as { ok?: unknown; error?: unknown; message?: unknown };
+    overflowHasCorrectCode = o.error === TOOL_LIMIT_EXCEEDED_CODE;
+    overflowHasMessage = typeof o.message === 'string' && o.message.length > 0;
+  }
+
+  // Cap reset across "turns": a fresh limiter starts counting at 1.
+  const fresh = makeRateLimiter(3);
+  fresh.increment(); // first call on the fresh limiter
+  fresh.increment(); // saturates fresh limiter
+  fresh.increment(); // overflow call
+  const freshAfterSaturation = makeRateLimiter(3);
+  resetCountOnFreshLimiter = freshAfterSaturation.increment();
 
   const cases: Case[] = [
-    // makeRateLimiter
+    // makeRateLimiter shape
     {
       name: 'first increment returns 1',
-      check: () => independent1 === 1,
-    },
-    {
-      name: 'second increment on same limiter returns 2',
-      check: () => firstCount === 2,
+      check: () => independentFirst === 1,
     },
     {
       name: 'independent limiters do not share state',
-      check: () => independent2 === 1,
+      check: () => independentSecond === 1,
     },
 
     // withRateLimit happy path
     {
       name: 'call 1 → inner execute result',
-      check: () => ok1 === 'inner-1',
+      check: () => firstResult === 'inner-1',
     },
     {
       name: 'call 2 → inner execute result',
-      check: () => ok2 === 'inner-2',
+      check: () => secondResult === 'inner-2',
     },
     {
       name: 'call 3 (last allowed) → inner execute result',
-      check: () => ok3 === 'inner-3',
+      check: () => thirdResult === 'inner-3',
     },
 
     // withRateLimit overflow
     {
-      name: 'call 4 (over cap) → {ok:false, error:"tool_limit_exceeded"}',
+      name: 'call 4 (over cap) → ok:false',
       check: () => {
-        if (typeof over4 !== 'object' || over4 === null) return false;
-        const o = over4 as { ok?: unknown; error?: unknown };
-        return o.ok === false && o.error === 'tool_limit_exceeded';
+        if (typeof overflowResult !== 'object' || overflowResult === null) return false;
+        return (overflowResult as { ok?: unknown }).ok === false;
       },
     },
     {
+      name: 'overflow payload carries error code "tool_limit_exceeded"',
+      check: () => overflowHasCorrectCode === true,
+    },
+    {
+      name: 'overflow payload carries human-readable message',
+      check: () => overflowHasMessage === true,
+    },
+    {
       name: 'inner execute NOT called when over cap',
-      check: () => originalCalledTimes === 3 && stillCalledAfterOver === 3,
+      check: () =>
+        innerCallCountAfterAllowed === 3 &&
+        innerCallCountAfterOverflow === 3,
+    },
+
+    // Cap reset (F5): a fresh limiter starts at 1, not from the old
+    // limiter's count. This is what makes the cap reset between turns.
+    {
+      name: 'fresh limiter after saturation starts at 1',
+      check: () => resetCountOnFreshLimiter === 1,
     },
   ];
 
