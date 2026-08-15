@@ -37,3 +37,6 @@ backups/
 
 # logs
 *.log
+
+# spec / ticket scratch space (local-only working documents)
+.scratch/
