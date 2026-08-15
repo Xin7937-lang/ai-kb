@@ -6,6 +6,9 @@
 // invoking the inner execute. State lives in a closure so each
 // fresh limiter starts at zero; buildToolsConfig() creates one per
 // streamChat invocation (= per turn), so the cap resets naturally.
+//
+// The wrapper is generic over the tool's execute args so it composes
+// with any Vercel AI SDK `CoreTool` (whose execute has typed args).
 
 export type RateLimiter = {
   /** Returns the new count after this call. */
@@ -25,26 +28,22 @@ export function makeRateLimiter(max: number): RateLimiter {
   };
 }
 
-// The constraint on the tool is intentionally loose — we only need
-// the `execute` shape — so this helper composes with anything that
-// satisfies the Vercel AI SDK `Tool` contract plus our own helpers.
-type ExecutableTool = {
-  execute: (...args: unknown[]) => Promise<unknown>;
+export type ExecutableTool<TArgs extends unknown[], TResult> = {
+  execute: (...args: TArgs) => PromiseLike<TResult>;
 };
 
-export function withRateLimit<T extends ExecutableTool>(
-  tool: T,
+export function withRateLimit<TArgs extends unknown[], TResult>(
+  tool: ExecutableTool<TArgs, TResult>,
   limiter: RateLimiter,
-): T {
-  const originalExecute = tool.execute.bind(tool);
+): ExecutableTool<TArgs, TResult | { ok: false; error: 'tool_limit_exceeded' }> {
+  const inner = tool.execute.bind(tool);
   return {
-    ...tool,
-    execute: async (...args: unknown[]): Promise<unknown> => {
+    execute: async (...args: TArgs) => {
       const callNum = limiter.increment();
       if (callNum > limiter.max) {
         return { ok: false, error: 'tool_limit_exceeded' };
       }
-      return originalExecute(...args);
+      return inner(...args);
     },
   };
 }

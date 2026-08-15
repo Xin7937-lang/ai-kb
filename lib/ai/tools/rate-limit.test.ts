@@ -6,6 +6,13 @@
 // Run: npx tsx lib/ai/tools/rate-limit.test.ts
 
 import { makeRateLimiter, withRateLimit } from './rate-limit';
+// Re-declare a minimal tool type so the test can call the generic
+// with unknown-shaped args. Production helper stays typed; the test
+// fixture deliberately mirrors the Vercel AI SDK's PromiseLike
+// signature so the wrapper's generic is inferred end-to-end.
+type Tool = {
+  execute: (...args: unknown[]) => PromiseLike<string>;
+};
 
 type Case = {
   name: string;
@@ -33,13 +40,13 @@ async function main(): Promise<void> {
   // withRateLimit: N succeed, N+1 fails
   const limiter = makeRateLimiter(3);
   let innerCalls = 0;
-  const tool = {
-    execute: async () => {
+  const tool: Tool = {
+    execute: (..._args: unknown[]) => {
       innerCalls += 1;
-      return `inner-${innerCalls}`;
+      return Promise.resolve(`inner-${innerCalls}`);
     },
   };
-  const wrapped = withRateLimit(tool, limiter);
+  const wrapped = withRateLimit<unknown[], string>(tool, limiter);
   ok1 = await wrapped.execute();
   ok2 = await wrapped.execute();
   ok3 = await wrapped.execute();
