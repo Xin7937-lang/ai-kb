@@ -29,6 +29,7 @@ import { buildChatContext, buildChatSystemPrompt } from './prompts';
 import { searchRelevantChunks } from './retrieval';
 import type { RetrievedChunk } from './retrieval-types';
 import { searchWeb } from '@/lib/search';
+import { buildToolsConfig } from './tools-config';
 
 /**
  * Cap on how many prior user turns we feed to the model. 10 is well
@@ -141,11 +142,13 @@ export async function streamChat(
   const systemPrompt = `${buildChatSystemPrompt(opts.webSearchEnabled ?? false, hasSources)}\n\n# 检索到的笔记\n\n${context}${webSearchContext}`;
 
   // 4. Run the model with the full (truncated) conversation.
+  const tools = buildToolsConfig();
   const result = await streamText({
     model: client.chat(modelId),
     system: systemPrompt,
     messages: truncated,
     temperature: 0.3,
+    tools,
   });
 
   // 5. Encode SSE.

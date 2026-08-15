@@ -1,0 +1,66 @@
+// lib/ai/tools/create_note.ts
+//
+// create_note tool: lets the /chat agent create a note on the user's
+// behalf. The tool's execute() is a thin wrapper around the existing
+// createNote() data-layer function, wrapped in withAgentAudit for the
+// two-phase audit lifecycle.
+//
+// Zod schema enforces hard limits per AGENTS.md style (strict caps,
+// no speculation) — title ≤ 200, content ≤ 50000.
+
+import { tool } from 'ai';
+import { z } from 'zod';
+import type { JSONContent } from '@tiptap/react';
+
+import { createNote } from '@/lib/notes/queries';
+
+import { withAgentAudit } from './agent-audit';
+
+// Wrap plain text into a minimal TipTap doc so the note renders
+// sensibly in the existing editor. Future enhancements can build
+// richer docs from parsed markdown, etc.
+function textToDoc(text: string): JSONContent {
+  return {
+    type: 'doc',
+    content: [
+      {
+        type: 'paragraph',
+        content: [{ type: 'text', text }],
+      },
+    ],
+  };
+}
+
+export const createNoteTool = tool({
+  description:
+    'Create a new note with the given title and content. Use this when the user asks you to save, capture, or write down something from the conversation. The note will appear in the main notes list and be searchable via RAG immediately.',
+  parameters: z.object({
+    title: z
+      .string()
+      .min(1, 'title must not be empty')
+      .max(200, 'title must be at most 200 characters'),
+    content: z
+      .string()
+      .min(1, 'content must not be empty')
+      .max(50000, 'content must be at most 50000 characters'),
+  }),
+  execute: async ({ title, content }) => {
+    const outcome = await withAgentAudit(
+      'create_note',
+      JSON.stringify({ title, content }),
+      async () => {
+        const note = await createNote({
+          title,
+          contentJson: textToDoc(content),
+          contentText: content,
+        });
+        return { ok: true, targetNoteId: note.id, result: 'ok' };
+      },
+    );
+
+    if (outcome.ok) {
+      return { ok: true, noteId: outcome.targetNoteId, title };
+    }
+    return { ok: false, error: outcome.error, message: outcome.message };
+  },
+});
