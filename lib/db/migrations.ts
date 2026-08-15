@@ -437,6 +437,25 @@ export const migrations: Migration[] = [
     },
   },
   {
+    // v10: soft-delete support for stage 2 (edit_note / delete_note
+    // tools). Adds a `deleted_at` column to `notes` so list / get /
+    // search can filter out tombstones without losing the row (which
+    // is important for the audit trail — the agent_actions row
+    // references the note by id and a hard delete would orphan it).
+    //
+    // Schema is additive: existing rows get NULL (i.e. live). New rows
+    // default to NULL too. The index supports the common "list live
+    // notes ordered by updated_at DESC" query.
+    version: 10,
+    name: 'notes_soft_delete',
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE notes ADD COLUMN deleted_at INTEGER;
+        CREATE INDEX notes_idx_deleted_at ON notes(deleted_at);
+      `);
+    },
+  },
+  {
     // v9: agent_actions table for tool-call audit trail + agent tools
     // settings defaults.
     //

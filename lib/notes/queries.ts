@@ -248,6 +248,7 @@ export function listNotes(params: ListNotesParams = {}): ListNotesResult {
              FROM notes n
              INNER JOIN notes_fts f ON f.rowid = n.rowid
             WHERE notes_fts MATCH ?
+              AND n.deleted_at IS NULL
               AND NOT EXISTS (SELECT 1 FROM note_tags nt WHERE nt.note_id = n.id)
             ORDER BY f.rank
             LIMIT ? OFFSET ?`,
@@ -264,7 +265,8 @@ export function listNotes(params: ListNotesParams = {}): ListNotesResult {
              FROM notes n
              INNER JOIN notes_fts f ON f.rowid = n.rowid
              INNER JOIN note_tags nt ON nt.note_id = n.id
-            WHERE notes_fts MATCH ? AND nt.tag_id = ?`,
+            WHERE notes_fts MATCH ? AND nt.tag_id = ?
+              AND n.deleted_at IS NULL`,
         )
         .get(ftsQuery, tagId) ?? { c: 0 }
     ).c;
@@ -287,6 +289,7 @@ export function listNotes(params: ListNotesParams = {}): ListNotesResult {
            INNER JOIN notes_fts f ON f.rowid = n.rowid
            INNER JOIN note_tags nt2 ON nt2.note_id = n.id
           WHERE notes_fts MATCH ? AND nt2.tag_id = ?
+            AND n.deleted_at IS NULL
           ORDER BY f.rank
           LIMIT ? OFFSET ?`,
       )
@@ -302,7 +305,8 @@ export function listNotes(params: ListNotesParams = {}): ListNotesResult {
           `SELECT COUNT(*) AS c
              FROM notes n
              INNER JOIN notes_fts f ON f.rowid = n.rowid
-            WHERE notes_fts MATCH ?`,
+            WHERE notes_fts MATCH ?
+              AND n.deleted_at IS NULL`,
         )
         .get(ftsQuery) ?? { c: 0 }
     ).c;
@@ -323,6 +327,7 @@ export function listNotes(params: ListNotesParams = {}): ListNotesResult {
            FROM notes n
            INNER JOIN notes_fts f ON f.rowid = n.rowid
           WHERE notes_fts MATCH ?
+            AND n.deleted_at IS NULL
           ORDER BY f.rank
           LIMIT ? OFFSET ?`,
       )
@@ -338,7 +343,8 @@ export function listNotes(params: ListNotesParams = {}): ListNotesResult {
           .prepare<[], { c: number }>(
             `SELECT COUNT(*) AS c
                FROM notes n
-              WHERE NOT EXISTS (SELECT 1 FROM note_tags nt WHERE nt.note_id = n.id)`,
+              WHERE NOT EXISTS (SELECT 1 FROM note_tags nt WHERE nt.note_id = n.id)
+                AND n.deleted_at IS NULL`,
           )
           .get() ?? { c: 0 }
       ).c;
@@ -386,9 +392,11 @@ export function listNotes(params: ListNotesParams = {}): ListNotesResult {
   }
 
   const total = (
-    db.prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM notes').get() ?? {
-      c: 0,
-    }
+    db
+      .prepare<[], { c: number }>(
+        'SELECT COUNT(*) AS c FROM notes WHERE deleted_at IS NULL',
+      )
+      .get() ?? { c: 0 }
   ).c;
 
   const rows = db
@@ -399,8 +407,9 @@ export function listNotes(params: ListNotesParams = {}): ListNotesResult {
                  INNER JOIN tags t ON t.id = nt.tag_id
                 WHERE nt.note_id = n.id) AS tags
          FROM notes n
-         ORDER BY n.updated_at DESC
-         LIMIT ? OFFSET ?`,
+        WHERE n.deleted_at IS NULL
+        ORDER BY n.updated_at DESC
+        LIMIT ? OFFSET ?`,
     )
     .all(safeLimit, safeOffset);
 
@@ -434,7 +443,8 @@ function runLikeListQuery(
              FROM notes n
              INNER JOIN note_tags nt ON nt.note_id = n.id
             WHERE (n.content_text LIKE ? ESCAPE '\\' OR n.title LIKE ? ESCAPE '\\')
-              AND nt.tag_id = ?`,
+              AND nt.tag_id = ?
+              AND n.deleted_at IS NULL`,
         )
         .get(like, like, tagId) ?? { c: 0 }
     ).c;
@@ -460,7 +470,8 @@ function runLikeListQuery(
       .prepare<[string, string], { c: number }>(
         `SELECT COUNT(*) AS c
            FROM notes
-          WHERE content_text LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\'`,
+          WHERE (content_text LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\')
+            AND deleted_at IS NULL`,
       )
       .get(like, like) ?? { c: 0 }
   ).c;
@@ -472,7 +483,8 @@ function runLikeListQuery(
                  INNER JOIN tags t ON t.id = nt.tag_id
                 WHERE nt.note_id = n.id) AS tags
          FROM notes n
-        WHERE n.content_text LIKE ? ESCAPE '\\' OR n.title LIKE ? ESCAPE '\\'
+        WHERE (n.content_text LIKE ? ESCAPE '\\' OR n.title LIKE ? ESCAPE '\\')
+          AND n.deleted_at IS NULL
         ORDER BY n.updated_at DESC
         LIMIT ? OFFSET ?`,
     )
@@ -488,7 +500,7 @@ export function getNote(id: string): NoteFull | null {
   const db = getDb();
   const row = db
     .prepare<[string], NoteRow>(
-      'SELECT * FROM notes WHERE id = ?',
+      'SELECT * FROM notes WHERE id = ? AND deleted_at IS NULL',
     )
     .get(id);
   if (!row) return null;
@@ -1339,6 +1351,7 @@ export function searchNotesFts(
            FROM notes n
            JOIN notes_fts f ON f.rowid = n.rowid
           WHERE notes_fts MATCH ?
+            AND n.deleted_at IS NULL
           ORDER BY bm25
           LIMIT ?`,
       )
@@ -1381,7 +1394,8 @@ export function searchNotesFts(
                  JOIN tags t ON t.id = nt.tag_id
                 WHERE nt.note_id = n.id) AS tags
          FROM notes n
-        WHERE n.content_text LIKE ? ESCAPE '\\' OR n.title LIKE ? ESCAPE '\\'
+        WHERE (n.content_text LIKE ? ESCAPE '\\' OR n.title LIKE ? ESCAPE '\\')
+          AND n.deleted_at IS NULL
         ORDER BY n.updated_at DESC
         LIMIT ?`,
     )

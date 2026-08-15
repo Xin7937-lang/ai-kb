@@ -371,7 +371,8 @@ async function embeddingPath(question: string, limit: number): Promise<EmbedCand
                 WHERE nt.note_id = c.note_id) AS tags
          FROM note_chunks c
          JOIN notes n ON n.id = c.note_id
-        WHERE c.id IN (${placeholders})`,
+        WHERE c.id IN (${placeholders})
+          AND n.deleted_at IS NULL`,
     )
     .all(...ids);
   const metaById = new Map(meta.map((m) => [m.id, m]));
