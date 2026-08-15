@@ -23,6 +23,74 @@ import { nanoid } from 'nanoid';
 
 import { getDb } from '@/lib/db/client';
 
+export type AgentActionRow = {
+  id: string;
+  conversationId: string | null;
+  actionType: string;
+  targetNoteId: string | null;
+  paramsJson: string | null;
+  result: string;
+  errorMessage: string | null;
+  createdAt: number;
+};
+
+export type ListAgentActionsOpts = {
+  limit?: number;
+  offset?: number;
+  conversationId?: string;
+};
+
+/**
+ * Read agent_actions rows newest-first. Used by the audit-history UI
+ * (ticket 04). Pure DB read; the HTTP layer wraps it with auth +
+ * query parsing.
+ */
+export function listAgentActions(
+  opts: ListAgentActionsOpts = {},
+): AgentActionRow[] {
+  const limit = opts.limit ?? 20;
+  const offset = opts.offset ?? 0;
+
+  const where: string[] = [];
+  const params: unknown[] = [];
+  if (opts.conversationId) {
+    where.push('conversation_id = ?');
+    params.push(opts.conversationId);
+  }
+
+  let sql =
+    `SELECT id, conversation_id, action_type, target_note_id,
+            params_json, result, error_message, created_at
+       FROM agent_actions`;
+  if (where.length > 0) sql += ` WHERE ${where.join(' AND ')}`;
+  sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+  params.push(limit, offset);
+
+  const rows = getDb()
+    .prepare<unknown[], {
+      id: string;
+      conversation_id: string | null;
+      action_type: string;
+      target_note_id: string | null;
+      params_json: string | null;
+      result: string;
+      error_message: string | null;
+      created_at: number;
+    }>(sql)
+    .all(...params);
+
+  return rows.map((r) => ({
+    id: r.id,
+    conversationId: r.conversation_id,
+    actionType: r.action_type,
+    targetNoteId: r.target_note_id,
+    paramsJson: r.params_json,
+    result: r.result,
+    errorMessage: r.error_message,
+    createdAt: r.created_at,
+  }));
+}
+
 export type AgentAuditResultCode =
   | 'ok'
   | 'ok_with_embedding_disabled'
