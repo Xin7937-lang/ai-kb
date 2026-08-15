@@ -23,13 +23,19 @@ import { nanoid } from 'nanoid';
 
 import { getDb } from '@/lib/db/client';
 
+export type AgentAuditResultCode =
+  | 'pending'
+  | 'ok'
+  | 'ok_with_embedding_disabled'
+  | 'error';
+
 export type AgentActionRow = {
   id: string;
   conversationId: string | null;
   actionType: string;
   targetNoteId: string | null;
   paramsJson: string | null;
-  result: string;
+  result: AgentAuditResultCode;
   errorMessage: string | null;
   createdAt: number;
 };
@@ -73,7 +79,7 @@ export function listAgentActions(
       action_type: string;
       target_note_id: string | null;
       params_json: string | null;
-      result: string;
+      result: AgentAuditResultCode;
       error_message: string | null;
       created_at: number;
     }>(sql)
@@ -91,11 +97,6 @@ export function listAgentActions(
   }));
 }
 
-export type AgentAuditResultCode =
-  | 'ok'
-  | 'ok_with_embedding_disabled'
-  | 'error';
-
 export type AgentWorkResult =
   | {
       ok: true;
@@ -111,32 +112,26 @@ export type AgentAuditOutcome =
   | { ok: true; actionId: string; targetNoteId: string | null }
   | { ok: false; actionId: string; error: string; message: string };
 
-// Marks an existing agent_action row as terminal. On 'ok' /
-// 'ok_with_embedding_disabled' we also persist the target_note_id
-// (may be null for actions that don't touch a specific note). On
-// 'error' we persist the error_message instead.
+// Marks an existing agent_action row as terminal. Single UPDATE
+// that always writes `result` and conditionally writes the action-
+// specific column (`target_note_id` for ok-ish, `error_message` for
+// errors) using COALESCE so the other column keeps its existing
+// value. Avoids the previous if/else split that duplicated the
+// prepared-statement shape.
 function markAgentActionResult(
   actionId: string,
   code: AgentAuditResultCode,
-  detail: { targetNoteId: string | null } | { errorMessage: string },
+  detail: { targetNoteId: string | null; errorMessage: string | null },
 ): void {
-  if (code === 'error') {
-    getDb()
-      .prepare(
-        `UPDATE agent_actions
-           SET result = ?, error_message = ?
-         WHERE id = ?`,
-      )
-      .run(code, (detail as { errorMessage: string }).errorMessage, actionId);
-    return;
-  }
   getDb()
     .prepare(
       `UPDATE agent_actions
-         SET result = ?, target_note_id = ?
+         SET result = ?,
+             target_note_id = COALESCE(?, target_note_id),
+             error_message = COALESCE(?, error_message)
        WHERE id = ?`,
     )
-    .run(code, (detail as { targetNoteId: string | null }).targetNoteId, actionId);
+    .run(code, detail.targetNoteId, detail.errorMessage, actionId);
 }
 
 export async function withAgentAudit(
@@ -160,10 +155,12 @@ export async function withAgentAudit(
     if (workResult.ok) {
       markAgentActionResult(actionId, workResult.result, {
         targetNoteId: workResult.targetNoteId,
+        errorMessage: null,
       });
       return { ok: true, actionId, targetNoteId: workResult.targetNoteId };
     }
     markAgentActionResult(actionId, 'error', {
+      targetNoteId: null,
       errorMessage: workResult.message,
     });
     return {
@@ -174,7 +171,10 @@ export async function withAgentAudit(
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    markAgentActionResult(actionId, 'error', { errorMessage: msg });
+    markAgentActionResult(actionId, 'error', {
+      targetNoteId: null,
+      errorMessage: msg,
+    });
     return { ok: false, actionId, error: 'work_threw', message: msg };
   }
 }

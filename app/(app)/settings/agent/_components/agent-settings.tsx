@@ -1,10 +1,12 @@
 'use client';
 
 // /settings/agent — toggle the /chat agent's tool-calling capability
-// and browse the audit history of recent tool invocations.
+// and browse the audit history of recent tool invocations. Audit
+// history supports pagination (20 rows per page) and filtering by
+// conversation ID.
 
-import { useEffect, useState, useTransition } from 'react';
-import { Bot, History, Loader2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Bot, ChevronLeft, ChevronRight, History, Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -18,16 +20,20 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 
+import type { AgentAuditResultCode } from '@/lib/ai/tools/agent-audit';
+
 type AgentAction = {
   id: string;
   conversationId: string | null;
   actionType: string;
   targetNoteId: string | null;
   paramsJson: string | null;
-  result: string;
+  result: AgentAuditResultCode;
   errorMessage: string | null;
   createdAt: number;
 };
+
+const PAGE_SIZE = 20;
 
 export function AgentSettings({ initialEnabled }: { initialEnabled: boolean }) {
   const [enabled, setEnabled] = useState(initialEnabled);
@@ -41,13 +47,18 @@ export function AgentSettings({ initialEnabled }: { initialEnabled: boolean }) {
   const [auditLoading, setAuditLoading] = useState(false);
   const [conversationFilter, setConversationFilter] = useState('');
   const [appliedFilter, setAppliedFilter] = useState('');
+  const [page, setPage] = useState(0);
 
-  async function loadAudit(filter: string) {
+  async function loadAudit(filter: string, offset: number) {
     setAuditLoading(true);
     setAuditError(null);
     try {
-      const qs = filter ? `?conversationId=${encodeURIComponent(filter)}` : '';
-      const res = await fetch(`/api/agent/actions${qs}`);
+      const params = new URLSearchParams();
+      if (filter) params.set('conversationId', filter);
+      params.set('limit', String(PAGE_SIZE));
+      params.set('offset', String(offset));
+      const qs = params.toString();
+      const res = await fetch(`/api/agents/actions${qs ? `?${qs}` : ''}`);
       const json = (await res.json().catch(() => ({}))) as {
         data?: AgentAction[];
         error?: string;
@@ -67,14 +78,26 @@ export function AgentSettings({ initialEnabled }: { initialEnabled: boolean }) {
     }
   }
 
-  // Load audit history on mount; reload when filter changes.
+  // Load audit history on mount; reload when filter or page changes.
   useEffect(() => {
-    loadAudit(appliedFilter);
+    loadAudit(appliedFilter, page * PAGE_SIZE);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appliedFilter]);
+  }, [appliedFilter, page]);
 
   function applyFilter() {
+    setPage(0);
     setAppliedFilter(conversationFilter.trim());
+  }
+
+  function goPrev() {
+    setPage((p) => Math.max(0, p - 1));
+  }
+
+  function goNext() {
+    // Only allow if current page was full — likely more rows.
+    if (actions && actions.length === PAGE_SIZE) {
+      setPage((p) => p + 1);
+    }
   }
 
   function onToggle(next: boolean) {
@@ -94,7 +117,6 @@ export function AgentSettings({ initialEnabled }: { initialEnabled: boolean }) {
         if (!res.ok) {
           setSaveStatus('error');
           setSaveError(json.message ?? json.error ?? '保存失败');
-          // Revert local state so the toggle matches what's persisted.
           setEnabled(!next);
           return;
         }
@@ -108,6 +130,9 @@ export function AgentSettings({ initialEnabled }: { initialEnabled: boolean }) {
         setEnabled(!next);
       });
   }
+
+  const pageStart = page * PAGE_SIZE + 1;
+  const pageEnd = page * PAGE_SIZE + (actions?.length ?? 0);
 
   return (
     <div className="space-y-4">
@@ -157,7 +182,7 @@ export function AgentSettings({ initialEnabled }: { initialEnabled: boolean }) {
             审计记录
           </CardTitle>
           <CardDescription>
-            最近 20 条 Agent 工具调用记录。
+            每页 {PAGE_SIZE} 条，按时间倒序。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -198,38 +223,67 @@ export function AgentSettings({ initialEnabled }: { initialEnabled: boolean }) {
               {appliedFilter ? '该对话暂无工具调用。' : '尚无工具调用。开启 Agent 工具后调用一次即可看到记录。'}
             </p>
           ) : actions ? (
-            <div className="overflow-x-auto rounded-md border">
-              <table className="w-full text-xs">
-                <thead className="bg-muted/40 text-left">
-                  <tr>
-                    <th className="px-2 py-1.5 font-medium">时间</th>
-                    <th className="px-2 py-1.5 font-medium">动作</th>
-                    <th className="px-2 py-1.5 font-medium">目标笔记</th>
-                    <th className="px-2 py-1.5 font-medium">结果</th>
-                    <th className="px-2 py-1.5 font-medium">说明</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {actions.map((a) => (
-                    <tr key={a.id} className="border-t">
-                      <td className="px-2 py-1.5 font-mono text-[11px] text-muted-foreground">
-                        {new Date(a.createdAt).toLocaleString('zh-CN')}
-                      </td>
-                      <td className="px-2 py-1.5 font-medium">{a.actionType}</td>
-                      <td className="px-2 py-1.5 font-mono text-[11px]">
-                        {a.targetNoteId ?? '—'}
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <ResultBadge result={a.result} />
-                      </td>
-                      <td className="px-2 py-1.5 text-muted-foreground">
-                        {a.errorMessage ?? (a.paramsJson ? truncate(a.paramsJson, 60) : '—')}
-                      </td>
+            <>
+              <div className="overflow-x-auto rounded-md border">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/40 text-left">
+                    <tr>
+                      <th className="px-2 py-1.5 font-medium">时间</th>
+                      <th className="px-2 py-1.5 font-medium">动作</th>
+                      <th className="px-2 py-1.5 font-medium">目标笔记</th>
+                      <th className="px-2 py-1.5 font-medium">结果</th>
+                      <th className="px-2 py-1.5 font-medium">说明</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {actions.map((a) => (
+                      <tr key={a.id} className="border-t">
+                        <td className="px-2 py-1.5 font-mono text-[11px] text-muted-foreground">
+                          {new Date(a.createdAt).toLocaleString('zh-CN')}
+                        </td>
+                        <td className="px-2 py-1.5 font-medium">{a.actionType}</td>
+                        <td className="px-2 py-1.5 font-mono text-[11px]">
+                          {a.targetNoteId ?? '—'}
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <ResultBadge result={a.result} />
+                        </td>
+                        <td className="px-2 py-1.5 text-muted-foreground">
+                          {a.errorMessage ?? '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>
+                  第 {pageStart}–{pageEnd} 条
+                </span>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={goPrev}
+                    disabled={page === 0 || auditLoading}
+                  >
+                    <ChevronLeft className="mr-1 h-3 w-3" />
+                    上一页
+                  </Button>
+                  <span className="px-2">第 {page + 1} 页</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={goNext}
+                    disabled={!actions || actions.length < PAGE_SIZE || auditLoading}
+                  >
+                    下一页
+                    <ChevronRight className="ml-1 h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            </>
           ) : null}
         </CardContent>
       </Card>
@@ -237,7 +291,7 @@ export function AgentSettings({ initialEnabled }: { initialEnabled: boolean }) {
   );
 }
 
-function ResultBadge({ result }: { result: string }) {
+function ResultBadge({ result }: { result: AgentAuditResultCode }) {
   const isOk = result === 'ok' || result === 'ok_with_embedding_disabled';
   const isError = result === 'error';
   const color = isError
@@ -250,8 +304,4 @@ function ResultBadge({ result }: { result: string }) {
       {result}
     </span>
   );
-}
-
-function truncate(s: string, max: number): string {
-  return s.length > max ? s.slice(0, max) + '…' : s;
 }
