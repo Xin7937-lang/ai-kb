@@ -1,10 +1,11 @@
 # Interface Contracts for Parallel Implementation
 
-> **Historical note:** All S1–S10 workstreams are complete. The file-ownership
-> table below is preserved for reference, but new work should check the
-> current file tree rather than treating the table as an active gate.
-> Shared conventions (response shapes, naming, FTS sanitization, etc.)
-> remain in force.
+> **Historical note:** All S1–S10 workstreams are complete, plus RAG-lite chat
+> at `/chat` and agent tool-calling (stage 1 + 2: `read_note` / `create_note` /
+> `edit_note` / `delete_note`). The file-ownership table below is preserved
+> for reference, but new work should check the current file tree rather than
+> treating the table as an active gate. Shared conventions (response shapes,
+> naming, FTS sanitization, etc.) remain in force.
 
 This document defines shared conventions, function signatures, response shapes,
 and historical file ownership boundaries.
@@ -45,7 +46,7 @@ C:\opencode-space\knowledge-base\
 ├── lib/
 │   ├── env.ts, crypto.ts, utils.ts
 │   ├── auth/{jwt,password,session,edge,init,constants}.ts
-│   ├── db/{client,migrate,migrations}.ts            # now at migration v2
+│   ├── db/{client,migrate,migrations}.ts            # now at migration v10
 │   ├── notes/{queries,tiptap-init,chunk}.ts
 │   ├── ai/{provider,chat,summarize,retrieval,test,prompts,errors,mask,embeddings}.ts
 │   ├── search/{config,providers/*.ts,index}.ts      # web search abstraction
@@ -64,7 +65,8 @@ C:\opencode-space\knowledge-base\
 ```sql
 notes         (id TEXT PK, title TEXT, content_json TEXT, content_text TEXT,
                summary TEXT, summary_state TEXT DEFAULT 'none',
-               created_at INT, updated_at INT)
+               created_at INT, updated_at INT,
+               deleted_at INT)                        -- v10: soft-delete; NULL = live
 notes_fts     (FTS5 virtual table; kept in sync via triggers)
 tags          (id INT PK AI, name TEXT UNIQUE,
                position INT DEFAULT 999999)          -- v2: sort order; 收藏 = 0
@@ -73,6 +75,9 @@ assets        (id TEXT PK, note_id TEXT?, rel_path TEXT, mime TEXT, size INT,
                created_at INT, FK SET NULL on note delete)
 model_configs (id TEXT PK, name TEXT, base_url TEXT, api_key_enc TEXT,
                model TEXT, is_default INT, created_at INT)
+agent_actions (id TEXT PK, conversation_id TEXT?, action_type TEXT,
+               target_note_id TEXT?, params_json TEXT,
+               result TEXT, error_message TEXT?, created_at INT)
 settings      (key TEXT PK, value TEXT)
 _migrations   (version INT PK, name TEXT, applied_at INT)
 ```
@@ -133,6 +138,7 @@ export async function GET(request: NextRequest) {
 - UI accepts comma-separated input; split, trim, lowercase, dedupe, filter empty
 - A tag row in `tags` table is created on first use
 - Migration v2 added `tags.position` (default `999999`); the built-in `收藏` tag is fixed at `position = 0`
+- Migration v10 added `notes.deleted_at` (default `NULL`); all public notes accessors filter `WHERE deleted_at IS NULL`
 
 ### File paths
 - Static assets: relative to UPLOADS_DIR, format `YYYY/MM/<nanoid>.<ext>`

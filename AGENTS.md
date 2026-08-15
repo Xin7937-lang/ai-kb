@@ -9,7 +9,7 @@ The README and CONTRACTS.md describe a workstream plan; **do not trust them for 
 - **`CONTRACTS.md`** — file ownership, response shapes (`{ data | error }`), naming, FTS sanitization, time storage, Edge vs Node rules. Read before any API route work.
 - **`KB-MVP.md`** — product decisions, schema, API surface, env vars, milestone list.
 - **`docs/deploy-synology.md`** — step-by-step NAS deploy.
-- **`lib/db/migrations.ts`** — actual current schema (now at v2; v2 added `tags.position` + the 收藏 favorites tag).
+- **`lib/db/migrations.ts`** — actual current schema (now at v10; v2 added `tags.position` + the 收藏 favorites tag, v10 added `notes.deleted_at` for soft-delete).
 
 ## Commands
 
@@ -48,6 +48,7 @@ npm run bootstrap   # = scripts/bootstrap.ts (recommended: migrate + first-run p
 - `notes_fts` is auto-maintained by triggers; you do not need to manually sync it.
 - FTS5 query strings must be sanitized (`"`, `*`, `(`, `)`, `:` break `MATCH`) — see `lib/notes/queries.ts`.
 - Tags are stored lowercased + trimmed. The 收藏 tag is special-cased at `position = 0` by migration v2.
+- Soft-delete: `notes.deleted_at INTEGER` (NULL = live). Every public notes accessor (`getNote`, `listNotes`, `searchNotesFts`, `listTagTree`, `getNoteStats`) filters out rows where `deleted_at IS NOT NULL`.
 
 ## Env vars (all read via `lib/env.ts`)
 
