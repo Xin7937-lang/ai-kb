@@ -158,8 +158,8 @@ export function buildFtsQuery(raw: string): string {
  * LIKE is slower (full table scan on content_text) so we only invoke it
  * when the FTS5 path produces zero rows.
  *
- * Escapes `%`, `_`, and `\` from user input so a literal `%` typed by
- * the user doesn't behave as a wildcard. The caller must also use
+ * Escapes `%`, `_`, and `\` from user input so a literal `%` typed by the
+ * user doesn't behave as a wildcard. The caller must also use
  * `ESCAPE '\\'` in the SQL.
  */
 export function buildLikePattern(raw: string): string {
@@ -623,8 +623,8 @@ export async function createNote(
 }
 
 export type UpdateNoteInput = {
-  title: string;
-  contentJson: JSONContent;
+  title?: string;
+  contentJson?: JSONContent;
   contentText?: string;
   tags?: string[];
   /**
@@ -645,16 +645,20 @@ export type UpdateNoteInput = {
 export async function updateNote(
   id: string,
   input: UpdateNoteInput,
-): Promise<NoteFull | null> {
+): Promise<(NoteFull & { embedded: boolean }) | null> {
   const db = getDb();
   const existing = db
     .prepare<[string], NoteRow>('SELECT * FROM notes WHERE id = ?')
     .get(id);
   if (!existing) return null;
 
-  const title = input.title.trim() || '未命名笔记';
-  const contentJson = input.contentJson ?? EMPTY_TIPTAP_DOC;
-  const newText = (input.contentText ?? extractText(contentJson)).trim();
+  const title =
+    input.title !== undefined ? input.title.trim() || '未命名笔记' : existing.title;
+  // Preserve existing content when the caller only wants to update
+  // metadata (e.g. title-only or tags-only edits). Without this, a
+  // title-only edit would fall back to the empty doc and wipe the body.
+  const contentJson = input.contentJson ?? parseContentJson(existing.content_json);
+  const newText = (input.contentText ?? existing.content_text).trim();
   const now = Date.now();
 
   const contentChanged =
@@ -693,8 +697,10 @@ export async function updateNote(
   });
 
   // Regenerate chunks when content actually changed.
+  let embedded = !contentChanged; // no chunks to embed if nothing changed
   if (contentChanged) {
     const result = await replaceNoteChunks(id, newText);
+    embedded = result.embedded;
     if (result.error) {
       console.error(
         `[notes.updateNote] embedding failed for ${id}: ${result.error}`,
@@ -702,7 +708,23 @@ export async function updateNote(
     }
   }
 
-  return getNote(id);
+  const updated = getNote(id);
+  if (!updated) return null;
+  return { ...updated, embedded };
+}
+
+/**
+ * Soft-delete a note by setting deleted_at to the current timestamp.
+ * Returns true if the note existed and was not already deleted.
+ * The row is kept for recovery; list/get/search already filter these out.
+ */
+export function softDeleteNote(id: string): boolean {
+  const result = getDb()
+    .prepare(
+      'UPDATE notes SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL',
+    )
+    .run(Date.now(), id);
+  return result.changes > 0;
 }
 
 /**
@@ -1310,9 +1332,9 @@ export type FtsSearchResult = {
  */
 export function searchNotesFts(
   query: string,
-  opts: { 
-    limit?: number; 
-    titleWeight?: number; 
+  opts: {
+    limit?: number;
+    titleWeight?: number;
     contentWeight?: number;
     /**
      * If provided, used as the FTS5 MATCH expression instead of

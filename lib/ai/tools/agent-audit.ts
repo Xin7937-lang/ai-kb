@@ -105,6 +105,7 @@ export type AgentWorkResult =
     }
   | {
       ok: false;
+      error?: string;
       message: string;
     };
 
@@ -163,10 +164,13 @@ export async function withAgentAudit(
       targetNoteId: null,
       errorMessage: workResult.message,
     });
+    // Surface the inner work() error code (e.g. 'note_not_found') so
+    // the tool response has a specific category rather than the
+    // generic 'work_failed' wrapper.
     return {
       ok: false,
       actionId,
-      error: 'work_failed',
+      error: workResult.error ?? 'work_failed',
       message: workResult.message,
     };
   } catch (err) {
