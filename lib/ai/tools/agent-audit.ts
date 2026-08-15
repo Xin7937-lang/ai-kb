@@ -1,7 +1,9 @@
 // lib/ai/tools/agent-audit.ts
 //
-// Two-phase audit wrapper for agent tool calls. Used by every tool
-// (currently create_note; stage 2 will add edit_note / delete_note).
+// Two-phase audit wrapper for agent tool *write* operations. Read-only
+// tools (read_note) deliberately opt out — they don't mutate state.
+//
+// Currently used by create_note; stage 2 will add edit_note / delete_note.
 //
 // Lifecycle of a single agent action:
 //   1. INSERT pending row (actionId generated here).

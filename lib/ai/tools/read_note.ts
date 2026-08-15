@@ -19,8 +19,9 @@ export const readNoteTool = tool({
     'Use noteId when you already know which note to reference (from a prior ' +
     'read_note result, a citation in a prior answer, or the user explicitly ' +
     'naming a note). Use query when looking for notes about a topic. ' +
-    'Provide exactly one of noteId or query — not both, not neither. ' +
-    'Returns the full note (by ID) or a list of search-result summaries (by query).',
+    'Provide at least one of noteId or query. If both are provided, ' +
+    'noteId takes precedence and query is ignored. Returns the full ' +
+    'note (by ID) or a list of search-result summaries (by query).',
   parameters: z
     .object({
       noteId: z
@@ -44,12 +45,10 @@ export const readNoteTool = tool({
       }
       return { ok: true, note };
     }
-    if (query) {
-      const results = searchNotesFts(query);
-      return { ok: true, results };
-    }
-    // Should be unreachable — refinement would have rejected the input —
-    // but kept as a defensive fallback so we never return undefined.
-    return { ok: false, error: 'no_input' };
+    // query is guaranteed non-empty here: refinement rejects inputs
+    // where neither noteId nor query is provided, and noteId is falsy
+    // in this branch.
+    const results = searchNotesFts(query ?? '');
+    return { ok: true, results };
   },
 });

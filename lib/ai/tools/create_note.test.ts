@@ -37,8 +37,6 @@ let schemaEmptyTitle: boolean | null = null;
 let schemaLongTitle: boolean | null = null;
 let schemaLongContent: boolean | null = null;
 let schemaValid: boolean | null = null;
-let buildConfigOffCount: number | null = null;
-let buildConfigOnHasCreateNote: boolean | null = null;
 
 type Case = {
   name: string;
@@ -103,27 +101,15 @@ const cases: Case[] = [
     name: 'parameters accepts a valid payload',
     check: () => schemaValid === true,
   },
-  // ── tools-config toggle ──
-  {
-    name: 'buildToolsConfig() returns 0 keys when agent_tools_enabled=false',
-    check: () => buildConfigOffCount === 0,
-  },
-  {
-    name: 'buildToolsConfig() includes create_note key when agent_tools_enabled=true',
-    check: () => buildConfigOnHasCreateNote === true,
-  },
+  // buildToolsConfig() coverage lives in lib/ai/tools-config.test.ts
 ];
 
 async function main(): Promise<void> {
   const { migrate } = await import('../../db/migrate');
   const { getDb, closeDb } = await import('../../db/client');
-  const {
-    setAgentToolsEnabled,
-    setAgentToolLimit,
-  } = await import('@/lib/auth/init');
+  const { setAgentToolLimit } = await import('@/lib/auth/init');
   const { createNoteTool } = await import('./create_note');
   const { withAgentAudit } = await import('./agent-audit');
-  const { buildToolsConfig } = await import('../tools-config');
 
   try {
     migrate();
@@ -181,13 +167,6 @@ async function main(): Promise<void> {
     schemaLongTitle = params.safeParse({ title: 'a'.repeat(201), content: 'x' }).success;
     schemaLongContent = params.safeParse({ title: 'ok', content: 'a'.repeat(50001) }).success;
     schemaValid = params.safeParse({ title: 'ok', content: 'fine' }).success;
-
-    // ── tools-config toggle ──
-    setAgentToolsEnabled(false);
-    buildConfigOffCount = Object.keys(buildToolsConfig()).length;
-    setAgentToolsEnabled(true);
-    buildConfigOnHasCreateNote =
-      Object.keys(buildToolsConfig()).includes('create_note');
   } finally {
     closeDb();
     if (existsSync(tmpDb)) unlinkSync(tmpDb);
