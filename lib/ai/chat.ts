@@ -30,6 +30,7 @@ import { searchRelevantChunks } from './retrieval';
 import type { RetrievedChunk } from './retrieval-types';
 import { searchWeb } from '@/lib/search';
 import { buildToolsConfig } from './tools-config';
+import { mapStreamPartToSseEvent } from './chat-sse';
 
 /**
  * Cap on how many prior user turns we feed to the model. 10 is well
@@ -171,11 +172,13 @@ export async function streamChat(
       controller.enqueue(encoder.encode(sourcesEvent));
       let accumulated = '';
       try {
-        for await (const delta of result.textStream) {
-          if (!delta) continue;
-          accumulated += delta;
+        for await (const part of result.fullStream) {
+          const event = mapStreamPartToSseEvent(part);
+          if (event === null) continue;
+          // Only text deltas contribute to the final accumulated text.
+          if (event.type === 'delta') accumulated += event.delta;
           controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ delta })}\n\n`),
+            encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
           );
         }
         controller.enqueue(
