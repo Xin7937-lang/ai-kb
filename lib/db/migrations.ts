@@ -436,4 +436,40 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    // v9: agent_actions table for tool-call audit trail + agent tools
+    // settings defaults.
+    //
+    // agent_actions records every tool call invoked from /chat. The
+    // result column is plain TEXT (no CHECK constraint) so future
+    // action types / result states (e.g. ok_with_embedding_disabled
+    // in ticket 01) can land without a schema migration.
+    //
+    // Settings are INSERT OR IGNORE so re-running migrate() on an
+    // already-migrated DB is a no-op.
+    version: 9,
+    name: 'agent_actions_table',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE agent_actions (
+          id              TEXT PRIMARY KEY,
+          conversation_id TEXT,
+          action_type     TEXT NOT NULL,
+          target_note_id  TEXT,
+          params_json     TEXT,
+          result          TEXT NOT NULL,
+          error_message   TEXT,
+          created_at      INTEGER NOT NULL
+        );
+        CREATE INDEX idx_agent_actions_conv ON agent_actions(conversation_id);
+        CREATE INDEX idx_agent_actions_created ON agent_actions(created_at DESC);
+      `);
+
+      db.exec(`
+        INSERT OR IGNORE INTO settings (key, value) VALUES
+          ('agent_tools_enabled', 'false'),
+          ('agent_tool_limit', '5');
+      `);
+    },
+  },
 ];
