@@ -63,12 +63,19 @@ const cases: Case[] = [
       notesRow.title === 'Slice 3 test note',
   },
   {
-    name: 'agent_actions row inserted with result="ok" + matching target_note_id',
+    name: 'agent_actions row inserted with result reflecting embedding status + matching target_note_id',
     check: () =>
       agentActionsOkRow !== null &&
-      agentActionsOkRow.result === 'ok' &&
+      // Test env has no default embedding model configured, so the
+      // tool falls back to the embedding-disabled result code.
+      agentActionsOkRow.result === 'ok_with_embedding_disabled' &&
       agentActionsOkRow.target_note_id === executeHappy!.noteId &&
       agentActionsOkRow.error_message === null,
+  },
+  // ── embedding-disabled fallback (Slice 4) ──
+  {
+    name: 'execute returns {ok: true} even when embedding is disabled',
+    check: () => executeHappy !== null && executeHappy.ok === true,
   },
   // ── audit wrapper error path ──
   {

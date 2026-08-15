@@ -54,7 +54,14 @@ export const createNoteTool = tool({
           contentJson: textToDoc(content),
           contentText: content,
         });
-        return { ok: true, targetNoteId: note.id, result: 'ok' };
+        // Distinguish embedding-succeeded vs embedding-disabled in the
+        // audit row so consumers (UI, future recovery code) can tell
+        // which notes need re-embedding.
+        return {
+          ok: true,
+          targetNoteId: note.id,
+          result: note.embedded ? 'ok' : 'ok_with_embedding_disabled',
+        };
       },
     );
 

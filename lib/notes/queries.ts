@@ -563,8 +563,18 @@ export type CreateNoteInput = {
  * if `contentText` is omitted, we extract it server-side from the JSON.
  * The summary_state defaults to 'none' (no AI summary yet). Tag names are
  * normalized, deduped, and inserted via {@link setNoteTags}.
+ *
+ * Returns the created note plus an `embedded` flag indicating whether
+ * chunks were successfully embedded into sqlite-vec. Callers that don't
+ * care about embedding status can ignore the flag (it just spreads onto
+ * the existing NoteFull shape). This is used by the agent create_note
+ * tool (ticket 01) to record the right audit result.
  */
-export async function createNote(input: CreateNoteInput): Promise<NoteFull> {
+export type CreateNoteResult = NoteFull & { embedded: boolean };
+
+export async function createNote(
+  input: CreateNoteInput,
+): Promise<CreateNoteResult> {
   const title = input.title.trim() || '未命名笔记';
   const contentJson = input.contentJson ?? EMPTY_TIPTAP_DOC;
   const contentText = (
@@ -597,7 +607,7 @@ export async function createNote(input: CreateNoteInput): Promise<NoteFull> {
   if (!created) {
     throw new Error('createNote: note disappeared after insert');
   }
-  return created;
+  return { ...created, embedded: chunks.embedded };
 }
 
 export type UpdateNoteInput = {
