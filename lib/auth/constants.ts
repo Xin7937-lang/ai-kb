@@ -14,3 +14,12 @@ export const AUTH_COOKIE = 'ai_kb_token';
  * JWT lifetime in seconds (default: 7 days).
  */
 export const AUTH_TTL_SECONDS = 60 * 60 * 24 * 7;
+
+/**
+ * Bearer-token synthetic session lifetime in seconds (default: 1 year).
+ * The bearer check itself is stateless (validates against the stored hash
+ * on every request), so this `exp` value is purely informational — it lets
+ * downstream code that reads `session.exp` see a sensible horizon without
+ * doing any token refresh.
+ */
+export const BEARER_TTL_SECONDS = 60 * 60 * 24 * 365;

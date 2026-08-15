@@ -170,3 +170,54 @@ export function getAgentToolLimit(): number {
 export function setAgentToolLimit(limit: number): void {
   setSetting(AGENT_TOOL_LIMIT_KEY, String(Math.round(limit)));
 }
+
+// ---------------------------------------------------------------------------
+// Agent API bearer token (ticket 11 — LAN-agent access)
+// ---------------------------------------------------------------------------
+
+export const AGENT_API_TOKEN_HASH_KEY = 'agent_api_token_hash';
+export const AGENT_API_TOKEN_CREATED_AT_KEY = 'agent_api_token_created_at';
+
+export type AgentApiTokenStatus = {
+  configured: boolean;
+  createdAt: number | null;
+};
+
+/**
+ * Read the currently-stored API-token hash, or null if no token has
+ * ever been generated. Sessions with a matching `Authorization: Bearer`
+ * header validate against this hash; see lib/auth/session.ts.
+ */
+export function getAgentApiTokenHash(): string | null {
+  return getSetting(AGENT_API_TOKEN_HASH_KEY);
+}
+
+/**
+ * Persist a freshly-generated hash. Callers are expected to display the
+ * raw token to the user exactly once via the PUT response, then discard
+ * the raw form. After this call returns, the hash is the only thing the
+ * server stores.
+ */
+export function setAgentApiTokenHash(hash: string): void {
+  setSetting(AGENT_API_TOKEN_HASH_KEY, hash);
+  setSetting(AGENT_API_TOKEN_CREATED_AT_KEY, String(Date.now()));
+}
+
+/**
+ * Clear the stored hash + created-at. After this, bearer auth no longer
+ * succeeds for any token. Idempotent: safe to call when no token was
+ * configured.
+ */
+export function clearAgentApiToken(): void {
+  const db = getDb();
+  db.prepare('DELETE FROM settings WHERE key = ?').run(AGENT_API_TOKEN_HASH_KEY);
+  db.prepare('DELETE FROM settings WHERE key = ?').run(AGENT_API_TOKEN_CREATED_AT_KEY);
+}
+
+export function getAgentApiTokenStatus(): AgentApiTokenStatus {
+  const hash = getAgentApiTokenHash();
+  if (!hash) return { configured: false, createdAt: null };
+  const raw = getSetting(AGENT_API_TOKEN_CREATED_AT_KEY);
+  const createdAt = raw ? Number.parseInt(raw, 10) : NaN;
+  return { configured: true, createdAt: Number.isFinite(createdAt) ? createdAt : null };
+}
