@@ -14,12 +14,13 @@
 - **M1 基础**：单密码登录、笔记 CRUD（图文）、标签、全文搜索
 - **M2 导入导出**：Markdown / TXT / zip 导入；单篇 zip / 全量备份 zip 导出
 - **M3 AI 摘要 + 模型管理**：多家国内模型可配置切换；笔记一键流式摘要
+- **M4 与笔记对话（RAG-lite）**：FTS5 + sqlite-vec 混合检索，RRF 融合；可选 web search 兜底
+- **M5 Agent 工具调用（stage 1 + 2）**：`read_note` / `create_note` / `edit_note` / `delete_note`；开关默认关闭；写操作全量审计；单回合限额；spec 与 ticket 历史见 `docs/agent-crud/`
 
 ### 1.2 MVP 明确不包含（后续迭代）
 
 | 功能 | 计划阶段 | 备注 |
 |---|---|---|
-| 与笔记对话（RAG） | ✅ 已实现 | 基于 FTS5 + sqlite-vec 混合检索，RRF 融合 |
 | PDF 导入 | 后续 | 当前需求少，预留接口位 |
 | 公网部署（Vercel / 阿里云 VPS） | 后续 | 用户暂不熟悉流程 |
 | 多用户 / 注册 | 不计划 | 定位为个人自用 |
@@ -336,7 +337,7 @@ services:
 | 阶段 | 产出 | 预计步数 |
 |---|---|---|
 | **S1** 工程骨架 | ✅ Next.js + Tailwind + shadcn + ESLint + 目录 + `.env.example` | 1 |
-| **S2** 数据层 | ✅ SQLite client + 迁移 + 种子 + 加解密工具 | 1 |
+| **S2** 数据层 | ✅ SQLite client + 迁移（v10 含 soft-delete）+ 种子 + 加解密工具 | 1 |
 | **S3** 认证 | ✅ 登录页 + middleware + 首次启动 hash 密码 | 1 |
 | **S4** 笔记基础 | ✅ 列表 + 详情 + 新建 + TipTap + 标签 + FTS | 2-3 |
 | **S5** 图片上传 | ✅ uploads API + TipTap 图片扩展 + 静态托管 | 1 |
@@ -345,7 +346,9 @@ services:
 | **S8** AI 摘要 | ✅ 流式 SSE + UI + stale 标记 | 1 |
 | **S9** 容器化 | ✅ Dockerfile + compose + standalone 配置 | 1 |
 | **S10** 部署文档 | ✅ `docs/deploy-synology.md` + `docs/deploy-qnap.md` | 1 |
-| **RAG** 对话 | ✅ `/chat` 基于 FTS5 + sqlite-vec 混合检索（RRF 融合） | — |
+| **M4 RAG** 对话 | ✅ `/chat` 基于 FTS5 + sqlite-vec 混合检索（RRF 融合）+ web search 兜底 | — |
+| **M5 Agent 工具调用 stage 1** | ✅ `read_note` / `create_note`（spec `docs/agent-crud/spec.md`） | — |
+| **M5 Agent 工具调用 stage 2** | ✅ `edit_note` / `delete_note`（soft-delete）+ 工具卡片 + 共享单回合限额（spec `docs/agent-crud/spec.md`） | — |
 
 ---
 
@@ -399,7 +402,6 @@ PORT=3000
 
 ## 14. 后续阶段（非 MVP，仅备忘）
 
-- **RAG 对话**：已完成 FTS5 + sqlite-vec 混合检索（800-char 分块、2048 维 embedding、RRF 融合），支持 web search 模式。
-- **M5 公网部署**：Vercel + Turso 或阿里云 VPS；Cloudflare Tunnel / Tailscale / frp 三选一
-- **M6 PDF / Word / 网页抓取导入**
-- **M7 多用户 / 分享只读链接**
+- **M6 公网部署**：Vercel + Turso 或阿里云 VPS；Cloudflare Tunnel / Tailscale / frp 三选一
+- **M7 PDF / Word / 网页抓取导入**
+- **M8 多用户 / 分享只读链接**

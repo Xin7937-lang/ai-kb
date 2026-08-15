@@ -4,10 +4,10 @@
 
 ## 当前状态
 
-**MVP 已全部完成（S1–S10）**，并额外实现了基于 FTS5 的 RAG-lite 对话（`/chat`）。
+**MVP 已全部完成（S1–S10）**，并额外实现了基于 FTS5 + sqlite-vec 混合检索的 RAG-lite 对话（`/chat`），以及让 agent 在对话里直接读 / 创建 / 编辑 / 删除笔记的工具调用（stage 1 + 2）。
 
 - ✅ S1 工程骨架：Next.js 14 + Tailwind + shadcn/ui + ESLint
-- ✅ S2 数据层：SQLite (better-sqlite3) + 迁移（v2：标签排序 + 收藏）+ AES-256-GCM 加密
+- ✅ S2 数据层：SQLite (better-sqlite3) + 迁移（v10：标签排序 + 收藏 + soft-delete）+ AES-256-GCM 加密
 - ✅ S3 认证：bcrypt 密码 + JWT Cookie + middleware 路由保护
 - ✅ S4 笔记基础：CRUD + TipTap 编辑器 + 标签 + FTS5 全文搜索
 - ✅ S5 图片上传：multipart 上传 + TipTap Image 扩展 + 静态托管
@@ -16,7 +16,8 @@
 - ✅ S8 AI 摘要：SSE 流式摘要 + stale 标记
 - ✅ S9 容器化：Dockerfile + docker-compose + standalone 构建
 - ✅ S10 部署文档：群晖 `docs/deploy-synology.md` + 威联通 `docs/deploy-qnap.md`
-- ✅ M4-lite 对话：`/chat` 基于 FTS5 + sqlite-vec 混合检索（RRF 融合）
+- ✅ RAG-lite 对话：`/chat` 基于 FTS5 + sqlite-vec 混合检索（RRF 融合）；可选 web search 兜底
+- ✅ Agent 工具调用（stage 1 + 2）：`read_note` / `create_note` / `edit_note` / `delete_note`，开关默认关闭（`settings/agent-tools-enabled`），全部操作审计（`agent_actions` 表），单回合限额（`settings/agent-tool-limit`），spec 与 ticket 见 `docs/agent-crud/`
 
 ## 快速开始（开发）
 
@@ -67,7 +68,8 @@ npm run dev
 ├── docs/
 │   ├── plan-mvp.md         # 指向 KB-MVP.md
 │   ├── deploy-synology.md  # 群晖 Web Station 部署（S10）
-│   └── deploy-qnap.md      # 威联通部署（S10）
+│   ├── deploy-qnap.md      # 威联通部署（S10）
+│   └── agent-crud/         # Agent 工具调用（stage 1+2）的 spec + tickets 历史归档
 ├── scripts/                # 一次性脚本
 ├── middleware.ts           # 路由保护（S3 实现）
 ├── next.config.mjs
@@ -81,7 +83,7 @@ npm run dev
 | 阶段 | 状态 | 说明 |
 |---|---|---|
 | S1 工程骨架 | ✅ | Next.js + Tailwind + shadcn + 目录 + .env.example |
-| S2 数据层 | ✅ | SQLite + 迁移 + 加解密 |
+| S2 数据层 | ✅ | SQLite + 迁移（v10 含 soft-delete 列）+ 加解密 |
 | S3 认证 | ✅ | 登录 + middleware + 首次启动 hash |
 | S4 笔记基础 | ✅ | 列表/详情/新建 + TipTap + 标签 + FTS |
 | S5 图片上传 | ✅ | uploads API + TipTap Image |
@@ -92,6 +94,8 @@ npm run dev
 | S10 部署文档 | ✅ | 群晖 + 威联通手册 |
 | RAG 对话 | ✅ | `/chat` 混合检索：FTS5 BM25 + sqlite-vec KNN (2048d)，RRF 融合 + 多信号重排（时效 × 标题命中）+ 单条多样性上限；可选 web search 兜底（设置 `settings/chat-web-search`） |
 | 编辑器增强 | ✅ | 30 秒自动保存、对话一键存为笔记 |
+| Agent 工具调用 stage 1 | ✅ | `read_note` / `create_note`，开关默认关闭，写操作全量审计（`agent_actions` 表） |
+| Agent 工具调用 stage 2 | ✅ | `edit_note` / `delete_note`（soft-delete），保留 4 工具的共享单回合限额；spec 与 ticket 见 [`docs/agent-crud/`](./docs/agent-crud/) |
 
 完整规划见 [`docs/plan-mvp.md`](./docs/plan-mvp.md) 与 [`KB-MVP.md`](./KB-MVP.md)。
 
