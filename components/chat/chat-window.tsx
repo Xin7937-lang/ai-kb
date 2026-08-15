@@ -18,8 +18,11 @@ import {
 } from 'react';
 import { Loader2, Send, Sparkles, ChevronDown, ChevronUp, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ToolCallCard, type ToolCallState } from './tool-call-card';
-import { formatToolResult } from '@/lib/ai/tools/format-tool-result';
+import { ToolCallCard } from './tool-call-card';
+import {
+  formatToolResult,
+  type ToolCallState,
+} from '@/lib/ai/tools/format-tool-result';
 import { cn } from '@/lib/utils';
 
 type Source = { id: string; title: string };
@@ -147,7 +150,8 @@ export function ChatWindow({ conversationId, onTurnSaved }: Props) {
             })),
           );
         }
-      } catch {
+      } catch (err) {
+        console.error('[chat-window] failed to load conversation:', err);
         setMessages([WELCOME]);
       }
     });
@@ -192,8 +196,10 @@ export function ChatWindow({ conversationId, onTurnSaved }: Props) {
         }),
       });
       onTurnSaved?.();
-    } catch {
-      // silently ignore save errors — the chat experience isn't blocked
+    } catch (err) {
+      // Save errors don't block the chat, but log so the failure is
+      // discoverable from the browser console.
+      console.error('[chat-window] failed to save turn:', err);
     }
   }
 
@@ -452,6 +458,7 @@ function MessageBubble({
                 {message.toolCalls.map((tc) => (
                   <ToolCallCard
                     key={tc.toolCallId}
+                    toolCallId={tc.toolCallId}
                     toolName={tc.toolName}
                     state={tc.state}
                     args={tc.args}
@@ -614,8 +621,10 @@ async function consumeSse(
               handlers.onError(data['error'] as string);
               return;
             }
-          } catch {
-            // ignore malformed lines
+          } catch (err) {
+            // SSE lines from a buggy server (or proxy) shouldn't crash
+            // the consumer. Log once per malformed line for diagnosis.
+            console.warn('[chat-window] malformed SSE frame:', err);
           }
         }
         idx = buffer.indexOf('\n\n');

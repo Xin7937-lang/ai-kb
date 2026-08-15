@@ -52,15 +52,25 @@ function isToolResultPart(
   return p.type === 'tool-result';
 }
 
+function textDeltaOf(part: unknown): string | null {
+  if (typeof part !== 'object' || part === null) return null;
+  const v = (part as { textDelta?: unknown }).textDelta;
+  return typeof v === 'string' ? v : null;
+}
+
+function errorPayloadOf(part: unknown): unknown {
+  if (typeof part !== 'object' || part === null) return null;
+  return (part as { error?: unknown }).error;
+}
+
 export function mapStreamPartToSseEvent(part: unknown): SseEvent | null {
   if (typeof part !== 'object' || part === null) return null;
   const p = part as { type?: unknown };
 
   switch (p.type) {
     case 'text-delta': {
-      const td = part as { textDelta?: unknown };
-      if (typeof td.textDelta !== 'string') return null;
-      return { type: 'delta', delta: td.textDelta };
+      const delta = textDeltaOf(part);
+      return delta === null ? null : { type: 'delta', delta };
     }
     case 'tool-call':
       return isToolCallPart(part)
@@ -81,9 +91,8 @@ export function mapStreamPartToSseEvent(part: unknown): SseEvent | null {
           }
         : null;
     case 'error': {
-      const e = part as { error?: unknown };
-      const message =
-        e.error instanceof Error ? e.error.message : String(e.error);
+      const err = errorPayloadOf(part);
+      const message = err instanceof Error ? err.message : String(err);
       return { type: 'error', error: message };
     }
     // These Vercel AI SDK parts aren't surfaced to the client yet.

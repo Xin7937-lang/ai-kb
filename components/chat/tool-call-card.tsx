@@ -14,11 +14,13 @@
 import { useState } from 'react';
 import { Check, ChevronDown, ChevronUp, Loader2, X } from 'lucide-react';
 
+import type { ToolCallState } from '@/lib/ai/tools/format-tool-result';
 import { cn } from '@/lib/utils';
 
-export type ToolCallState = 'in_progress' | 'success' | 'error';
-
 type Props = {
+  /** Unique identifier for this specific invocation. Used for a11y
+   *  (aria-controls) and React keys in the parent's render loop. */
+  toolCallId: string;
   /** Tool name as exposed by Vercel AI SDK (e.g. "create_note"). */
   toolName: string;
   /** Current lifecycle state of this invocation. */
@@ -35,6 +37,7 @@ type Props = {
 };
 
 export function ToolCallCard({
+  toolCallId,
   toolName,
   state,
   args,
@@ -56,6 +59,11 @@ export function ToolCallCard({
         ? 'text-emerald-600 dark:text-emerald-400'
         : 'text-destructive';
 
+  // Per-invocation id so two parallel calls to the same tool (e.g.
+  // two `create_note` in one turn) get unique aria-controls targets
+  // — using toolName here would collide.
+  const detailsId = `tc-details-${toolCallId}`;
+
   return (
     <div
       className={cn(
@@ -69,7 +77,7 @@ export function ToolCallCard({
         type="button"
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
-        aria-controls={`tc-details-${toolName}`}
+        aria-controls={detailsId}
         className="flex w-full items-center gap-2 text-left"
       >
         <Icon
@@ -85,7 +93,7 @@ export function ToolCallCard({
       </button>
       {expanded ? (
         <div
-          id={`tc-details-${toolName}`}
+          id={detailsId}
           className="mt-2 space-y-2 border-t border-border/50 pt-2 text-xs"
         >
           <div>
