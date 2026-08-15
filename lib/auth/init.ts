@@ -137,3 +137,36 @@ export function getChatWebSearchEnabled(): boolean {
 export function setChatWebSearchEnabled(enabled: boolean): void {
   setSetting(CHAT_WEB_SEARCH_KEY, enabled ? 'true' : 'false');
 }
+
+// ---------------------------------------------------------------------------
+// Agent tool-calling settings (ticket 01, slice 2/4)
+// ---------------------------------------------------------------------------
+
+export const AGENT_TOOLS_ENABLED_KEY = 'agent_tools_enabled';
+export const AGENT_TOOLS_ENABLED_DEFAULT = false;
+
+export function getAgentToolsEnabled(): boolean {
+  // Strict: only the literal string 'true' enables. Missing or
+  // malformed values fall back to the default (off) so a typo can't
+  // accidentally expose tool-calling.
+  return getSetting(AGENT_TOOLS_ENABLED_KEY) === 'true';
+}
+
+export function setAgentToolsEnabled(enabled: boolean): void {
+  setSetting(AGENT_TOOLS_ENABLED_KEY, enabled ? 'true' : 'false');
+}
+
+export const AGENT_TOOL_LIMIT_KEY = 'agent_tool_limit';
+export const AGENT_TOOL_LIMIT_DEFAULT = 5;
+
+export function getAgentToolLimit(): number {
+  const raw = getSetting(AGENT_TOOL_LIMIT_KEY);
+  if (!raw) return AGENT_TOOL_LIMIT_DEFAULT;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n)) return AGENT_TOOL_LIMIT_DEFAULT;
+  return n;
+}
+
+export function setAgentToolLimit(limit: number): void {
+  setSetting(AGENT_TOOL_LIMIT_KEY, String(Math.round(limit)));
+}
