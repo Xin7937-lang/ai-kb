@@ -4,6 +4,8 @@
 //   - Bottom-anchored input that posts to /api/chat
 //   - SSE stream parsed into live text in the assistant message bubble
 //   - Sources panel listing the notes the model used as context
+//   - Tool-call cards (in_progress / success / error) for create_note
+//     and read_note invocations driven by the agent
 //   - When `conversationId` is provided, turns are persisted via
 //     POST /api/chat/conversations/[id] after each SSE response.
 
@@ -16,15 +18,28 @@ import {
 } from 'react';
 import { Loader2, Send, Sparkles, ChevronDown, ChevronUp, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ToolCallCard, type ToolCallState } from './tool-call-card';
+import { formatToolResult } from '@/lib/ai/tools/format-tool-result';
 import { cn } from '@/lib/utils';
 
 type Source = { id: string; title: string };
+
+type ToolCallEntry = {
+  toolCallId: string;
+  toolName: string;
+  args: unknown;
+  state: ToolCallState;
+  result?: unknown;
+  summary: string;
+};
 
 type ChatMessage = {
   id: string;
   role: 'user' | 'assistant';
   text: string;
   sources?: Source[];
+  /** Transient — populated as the SSE stream emits tool_call / tool_result. */
+  toolCalls?: ToolCallEntry[];
   error?: string;
   streaming?: boolean;
   isWebSearch?: boolean;
@@ -239,6 +254,55 @@ export function ChatWindow({ conversationId, onTurnSaved }: Props) {
           onDelta: (delta) => {
             updateLastAssistant((m) => ({ ...m, text: m.text + delta }));
           },
+          onToolCall: (toolCallId, toolName, args) => {
+            updateLastAssistant((m) => ({
+              ...m,
+              toolCalls: [
+                ...(m.toolCalls ?? []),
+                {
+                  toolCallId,
+                  toolName,
+                  args,
+                  state: 'in_progress',
+                  summary: formatToolResult(
+                    toolName,
+                    'in_progress',
+                    args,
+                    undefined,
+                  ),
+                },
+              ],
+            }));
+          },
+          onToolResult: (toolCallId, toolName, result) => {
+            updateLastAssistant((m) => {
+              const toolCalls = m.toolCalls ?? [];
+              const state: ToolCallState =
+                typeof result === 'object' &&
+                result !== null &&
+                (result as { ok?: unknown }).ok === false
+                  ? 'error'
+                  : 'success';
+              return {
+                ...m,
+                toolCalls: toolCalls.map((tc) =>
+                  tc.toolCallId === toolCallId
+                    ? {
+                        ...tc,
+                        state,
+                        result,
+                        summary: formatToolResult(
+                          toolName,
+                          state,
+                          tc.args,
+                          result,
+                        ),
+                      }
+                    : tc,
+                ),
+              };
+            });
+          },
           onDone: (fullText) => {
             updateLastAssistant((m) => ({ ...m, streaming: false }));
             if (conversationId) {
@@ -383,6 +447,20 @@ function MessageBubble({
             {message.error ? (
               <p className="text-destructive">{message.error}</p>
             ) : null}
+            {message.toolCalls && message.toolCalls.length > 0 ? (
+              <div className="space-y-1">
+                {message.toolCalls.map((tc) => (
+                  <ToolCallCard
+                    key={tc.toolCallId}
+                    toolName={tc.toolName}
+                    state={tc.state}
+                    args={tc.args}
+                    result={tc.result}
+                    summary={tc.summary}
+                  />
+                ))}
+              </div>
+            ) : null}
             {message.sources && message.sources.length > 0 ? (
               <details
                 className="rounded-md border bg-background/50 p-2 text-xs"
@@ -454,6 +532,16 @@ function MessageBubble({
 type SseHandlers = {
   onSources: (sources: Source[], isWebSearch: boolean) => void;
   onDelta: (delta: string) => void;
+  onToolCall: (
+    toolCallId: string,
+    toolName: string,
+    args: unknown,
+  ) => void;
+  onToolResult: (
+    toolCallId: string,
+    toolName: string,
+    result: unknown,
+  ) => void;
   /** Called with the full accumulated assistant text when the stream completes. */
   onDone: (fullText: string) => void;
   onError: (msg: string) => void;
@@ -497,6 +585,26 @@ async function consumeSse(
               receivedSources = true;
             } else if (typeof data['delta'] === 'string') {
               handlers.onDelta(data['delta'] as string);
+            } else if (
+              typeof data['tool_call'] === 'object' &&
+              data['tool_call'] !== null
+            ) {
+              const tc = data['tool_call'] as {
+                toolCallId: string;
+                toolName: string;
+                args: unknown;
+              };
+              handlers.onToolCall(tc.toolCallId, tc.toolName, tc.args);
+            } else if (
+              typeof data['tool_result'] === 'object' &&
+              data['tool_result'] !== null
+            ) {
+              const tr = data['tool_result'] as {
+                toolCallId: string;
+                toolName: string;
+                result: unknown;
+              };
+              handlers.onToolResult(tr.toolCallId, tr.toolName, tr.result);
             } else if (data['done'] === true) {
               const fullText =
                 typeof data['fullText'] === 'string' ? data['fullText'] : '';
