@@ -150,6 +150,9 @@ export async function streamChat(
     messages: truncated,
     temperature: 0.3,
     tools,
+    // Allow the model to chain tool calls across multiple roundtrips
+    // (e.g. create → edit → delete) within a single user turn.
+    maxToolRoundtrips: 3,
   });
 
   // 5. Encode SSE.

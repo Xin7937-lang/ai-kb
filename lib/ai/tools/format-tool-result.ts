@@ -16,7 +16,7 @@
 
 export type ToolCallState = 'in_progress' | 'success' | 'error';
 
-// Tool result shapes from lib/ai/tools/{create_note,read_note}.ts.
+// Tool result shapes from lib/ai/tools/{create_note,read_note,edit_note,delete_note}.ts.
 // Narrow helpers extract fields defensively — never cast.
 
 function noteIdOf(args: unknown): string | null {
@@ -60,6 +60,12 @@ function resultsOf(result: unknown): unknown[] {
   return Array.isArray(r) ? r : [];
 }
 
+function updatesOf(args: unknown): { title?: string } | null {
+  if (typeof args !== 'object' || args === null) return null;
+  const u = (args as { updates?: unknown }).updates;
+  return typeof u === 'object' && u !== null ? (u as { title?: string }) : null;
+}
+
 function stringFieldOf(value: unknown, field: string): string | null {
   if (typeof value !== 'object' || value === null) return null;
   const v = (value as Record<string, unknown>)[field];
@@ -78,7 +84,13 @@ export function formatToolResult(
   if (toolName === 'read_note') {
     return formatReadNote(state, args, result);
   }
-  // Fallback for unknown tools (stage 2+).
+  if (toolName === 'edit_note') {
+    return formatEditNote(state, args, result);
+  }
+  if (toolName === 'delete_note') {
+    return formatDeleteNote(state, args, result);
+  }
+  // Fallback for unknown tools.
   return `${state === 'in_progress' ? '执行中' : state === 'success' ? '成功' : '失败'}：${toolName}`;
 }
 
@@ -132,4 +144,46 @@ function formatReadNote(
   const count = resultsOf(result).length;
   if (count === 0) return '没有找到匹配的笔记';
   return `找到 ${count} 条匹配的笔记`;
+}
+
+function formatEditNote(
+  state: ToolCallState,
+  args: unknown,
+  result: unknown,
+): string {
+  if (state === 'in_progress') {
+    const updateTitle = titleOf(updatesOf(args));
+    return updateTitle ? `正在编辑笔记为《${updateTitle}》…` : '正在编辑笔记…';
+  }
+  if (state === 'error') {
+    const code = errorCodeOf(result);
+    const message = errorMessageOf(result);
+    if (code === 'note_not_found') return '要编辑的笔记不存在';
+    return code ? `编辑笔记失败 [${code}]：${message}` : `编辑笔记失败：${message}`;
+  }
+  // success
+  const updateTitle = titleOf(updatesOf(args));
+  const resultTitle = titleOf(result);
+  return resultTitle || updateTitle
+    ? `已编辑笔记《${resultTitle ?? updateTitle}》`
+    : '已编辑笔记';
+}
+
+function formatDeleteNote(
+  state: ToolCallState,
+  _args: unknown,
+  result: unknown,
+): string {
+  if (state === 'in_progress') {
+    return '正在删除笔记…';
+  }
+  if (state === 'error') {
+    const code = errorCodeOf(result);
+    const message = errorMessageOf(result);
+    if (code === 'note_not_found') return '要删除的笔记不存在';
+    return code ? `删除笔记失败 [${code}]：${message}` : `删除笔记失败：${message}`;
+  }
+  // success
+  const noteId = noteIdOf(result) ?? stringFieldOf(result, 'noteId');
+  return noteId ? `已删除笔记 ${noteId}` : '已删除笔记';
 }

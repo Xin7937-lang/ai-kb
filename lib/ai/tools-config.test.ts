@@ -56,11 +56,13 @@ async function main(): Promise<void> {
       check: () => offKeys.length === 0,
     },
     {
-      name: 'toggle on → returns create_note + read_note keys',
+      name: 'toggle on → returns four tool keys',
       check: () =>
-        onKeys.length === 2 &&
+        onKeys.length === 4 &&
         onKeys.includes('create_note') &&
-        onKeys.includes('read_note'),
+        onKeys.includes('read_note') &&
+        onKeys.includes('edit_note') &&
+        onKeys.includes('delete_note'),
     },
     {
       name: 'toggle off again → 0 keys (idempotent)',

@@ -96,6 +96,56 @@ const cases: Case[] = [
     result: undefined,
     check: (out) => out.includes('搜索') || out.includes('读') || out.includes('查找'),
   },
+  // ── edit_note ──
+  {
+    name: 'edit_note success → contains new title',
+    toolName: 'edit_note',
+    state: 'success',
+    args: { noteId: 'abc123', updates: { title: 'Updated title' } },
+    result: { ok: true, noteId: 'abc123', title: 'Updated title' },
+    check: (out) => out.includes('Updated title'),
+  },
+  {
+    name: 'edit_note error note_not_found → "不存在"',
+    toolName: 'edit_note',
+    state: 'error',
+    args: { noteId: 'missing', updates: { title: 'x' } },
+    result: { ok: false, error: 'note_not_found', message: "note_not_found: 'missing' not found" },
+    check: (out) => out.includes('不存在'),
+  },
+  {
+    name: 'edit_note in_progress → "编辑中"',
+    toolName: 'edit_note',
+    state: 'in_progress',
+    args: { noteId: 'abc123', updates: { title: 'x' } },
+    result: undefined,
+    check: (out) => out.includes('编辑'),
+  },
+  // ── delete_note ──
+  {
+    name: 'delete_note success → contains note id',
+    toolName: 'delete_note',
+    state: 'success',
+    args: { noteId: 'abc123' },
+    result: { ok: true, noteId: 'abc123' },
+    check: (out) => out.includes('abc123'),
+  },
+  {
+    name: 'delete_note error note_not_found → "不存在"',
+    toolName: 'delete_note',
+    state: 'error',
+    args: { noteId: 'missing' },
+    result: { ok: false, error: 'note_not_found', message: "note_not_found: 'missing' not found" },
+    check: (out) => out.includes('不存在'),
+  },
+  {
+    name: 'delete_note in_progress → "删除中"',
+    toolName: 'delete_note',
+    state: 'in_progress',
+    args: { noteId: 'abc123' },
+    result: undefined,
+    check: (out) => out.includes('删除'),
+  },
 ];
 
 let failed = 0;

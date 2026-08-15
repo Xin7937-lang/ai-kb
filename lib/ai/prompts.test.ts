@@ -36,7 +36,7 @@ async function main(): Promise<void> {
       },
     },
 
-    // S6 — tool list: must enumerate create_note + read_note.
+    // S6 — tool list: must enumerate create_note + read_note + edit_note + delete_note.
     {
       name: 'explicitly lists create_note as available tool',
       check: () => promptText.includes('create_note'),
@@ -46,8 +46,16 @@ async function main(): Promise<void> {
       check: () => promptText.includes('read_note'),
     },
     {
-      name: 'does NOT mention delete_note (model has no such tool)',
-      check: () => !promptText.includes('delete_note'),
+      name: 'explicitly lists edit_note as available tool',
+      check: () => promptText.includes('edit_note'),
+    },
+    {
+      name: 'explicitly lists delete_note as available tool',
+      check: () => promptText.includes('delete_note'),
+    },
+    {
+      name: 'does NOT mention a nonexistent tool (e.g. summarize_note)',
+      check: () => !promptText.includes('summarize_note'),
     },
 
     // S7 — no-fabrication: must forbid claiming actions that
