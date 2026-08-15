@@ -3,20 +3,54 @@
 // End-to-end smoke for the agent tool-calling pipeline (ticket 06).
 // Spins up a throwaway DB, calls streamChat() directly with a mocked
 // LLM endpoint, and asserts:
-//   - SSE events: sources, tool_call(create_note), tool_result, deltas, done
+//   - SSE events: sources, tool_call(create_note), tool_result, done
 //   - DB state: a new row in `notes`, a new row in `agent_actions`
-//     with result='ok'
-//   - audit wrapper inserted the pending row → updated to ok
+//     with result='ok' (strict — not 'ok_with_embedding_disabled'),
+//     target_note_id matches the created note
+//   - Embedding row written (so result='ok' is honest, not lazy)
 //
 // We mock at the `global.fetch` level rather than standing up a
 // real HTTP server — the OpenAI-compatible client used by
 // streamChat delegates to fetch, so swapping the global is enough
-// to intercept all LLM traffic. Follows the same env-first pattern
-// as scripts/smoke-db.ts and scripts/smoke-embed.ts.
+// to intercept all LLM traffic. The mock handles both
+// /v1/chat/completions and /v1/embeddings endpoints.
+//
+// Follows the env-first dynamic-import pattern from scripts/smoke-db.ts
+// and scripts/smoke-embed.ts: loadEnvFile + env-vars before any
+// transitive import of lib/env.ts; dynamic imports for everything
+// else inside main(). Cleans up the throwaway DB plus its
+// better-sqlite3 WAL/SHM sidecar files.
 
-import { existsSync, unlinkSync } from 'fs';
+import { existsSync, readFileSync, unlinkSync } from 'fs';
 import { tmpdir } from 'os';
-import path from 'path';
+import path, { resolve } from 'path';
+
+function loadEnvFile(filename: string): void {
+  const p = resolve(process.cwd(), filename);
+  if (!existsSync(p)) return;
+  const raw = readFileSync(p, 'utf8');
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq < 0) continue;
+    const key = trimmed.slice(0, eq).trim();
+    let value = trimmed.slice(eq + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    if (process.env[key] === undefined) {
+      process.env[key] = value;
+    }
+  }
+}
+
+// Load env BEFORE any import that transitively pulls in lib/env.ts.
+loadEnvFile('.env.local');
+loadEnvFile('.env');
 
 const tmpDb = path.join(
   tmpdir(),
@@ -38,11 +72,13 @@ let agentActionRow: {
   target_note_id: string | null;
   error_message: string | null;
 } | null = null;
+let embeddingRowCount: number | null = null;
 let eventTypes = '';
 let hasToolCallForCreateNote = false;
 let hasToolResult = false;
-let hasDelta = false;
 let hasDone = false;
+let chatCallCount = 0;
+let embeddingCallCount = 0;
 
 async function main(): Promise<void> {
   const { migrate } = await import('../lib/db/migrate');
@@ -52,18 +88,34 @@ async function main(): Promise<void> {
   );
   const { encrypt } = await import('../lib/crypto');
   const { streamChat } = await import('../lib/ai/chat');
-  const { getDefaultModelId, getModelAndClient } = await import(
-    '../lib/ai/provider'
-  );
+  const { EMBEDDING_DIMENSION } = await import('../lib/ai/embeddings');
 
-  // ----- Mock LLM via global fetch -----
-  const callCount = { n: 0 };
+  // ----- Mock LLM via global.fetch (chat + embeddings endpoints) -----
   const realFetch = global.fetch;
-  global.fetch = ((input: unknown, _init?: unknown) => {
-    callCount.n++;
-    // First call: assistant emits a tool-call for create_note.
-    // Second call (after SDK executes the tool): final text.
-    if (callCount.n === 1) {
+  global.fetch = ((input: unknown, init?: { body?: string | null }) => {
+    const url = String(input);
+    // Embeddings endpoint: POST {baseUrl}/embeddings
+    if (url.endsWith('/embeddings')) {
+      embeddingCallCount++;
+      const body = init?.body ? JSON.parse(init.body) as { input?: string[] } : { input: [] };
+      const inputs = body.input ?? [];
+      return Promise.resolve(
+        jsonResponse({
+          object: 'list',
+          data: inputs.map(() => ({
+            object: 'embedding',
+            index: 0,
+            embedding: new Array(EMBEDDING_DIMENSION).fill(0),
+          })),
+          model: 'mock-embed-model',
+          usage: { prompt_tokens: 0, total_tokens: 0 },
+        }),
+      );
+    }
+    // Chat completions endpoint: POST {baseUrl}/chat/completions
+    chatCallCount++;
+    if (chatCallCount === 1) {
+      // First chat call: assistant emits a tool-call for create_note.
       return Promise.resolve(
         sseResponse([
           chatChunk({
@@ -110,6 +162,7 @@ async function main(): Promise<void> {
         ]),
       );
     }
+    // Subsequent chat calls: final text.
     return Promise.resolve(
       sseResponse([
         chatChunk({
@@ -138,29 +191,36 @@ async function main(): Promise<void> {
     initAuthFromEnv();
     setAgentToolsEnabled(true);
 
-    // Configure a default model pointing at the mock URL. The actual
-    // URL doesn't matter — global.fetch intercepts before any socket
-    // is opened. The api_key can be any string; the SDK forwards it
-    // as a header but our mock ignores headers.
+    // Configure chat + embedding models pointing at the mock URL.
+    // The URL doesn't matter — global.fetch intercepts before any
+    // socket is opened. The api_key can be any string; the SDK
+    // forwards it as a header but our mock ignores headers.
     const db = getDb();
+    const now = Date.now();
     db.prepare(
       `INSERT INTO model_configs
-         (id, name, base_url, api_key_enc, model, is_default, created_at)
-       VALUES (?, ?, ?, ?, ?, 1, ?)`,
+         (id, name, base_url, api_key_enc, model, kind, is_default, created_at)
+       VALUES (?, ?, ?, ?, ?, 'chat', 1, ?)`,
     ).run(
-      'mock-model',
-      'mock',
+      'mock-chat',
+      'mock chat',
       'http://mock.local/v1',
-      encrypt('sk-mock-not-used-by-the-mock-fetch'),
-      'mock-model-id',
-      Date.now(),
+      encrypt('sk-mock'),
+      'mock-chat-model',
+      now,
     );
-
-    // Now run streamChat. streamChat doesn't check session — only the
-    // route layer does — so we can call it directly.
-    const modelId = getDefaultModelId();
-    void getModelAndClient; // imported for type side-effect; not used directly
-    void modelId; // read once to warm the path
+    db.prepare(
+      `INSERT INTO model_configs
+         (id, name, base_url, api_key_enc, model, kind, is_default, created_at)
+       VALUES (?, ?, ?, ?, ?, 'embedding', 1, ?)`,
+    ).run(
+      'mock-embed',
+      'mock embed',
+      'http://mock.local/v1',
+      encrypt('sk-mock'),
+      'mock-embed-model',
+      now,
+    );
 
     let result: Awaited<ReturnType<typeof streamChat>>;
     try {
@@ -197,13 +257,13 @@ async function main(): Promise<void> {
               hasToolCallForCreateNote = true;
             }
             if (t === 'tool_result') hasToolResult = true;
-            if (t === 'delta' && typeof data['delta'] === 'string') hasDelta = true;
             if (data['done'] === true) hasDone = true;
             if (t === 'error' && typeof data['error'] === 'string') {
-              console.error('[smoke-agent] SSE error event:', data['error']);
+              console.error('[smoke-agent] [error] SSE error event:', data['error']);
             }
-          } catch {
-            // ignore malformed lines
+          } catch (err) {
+            // Malformed line: log with prefix, don't swallow silently.
+            console.warn('[smoke-agent] malformed SSE frame:', err);
           }
         }
         idx = buffer.indexOf('\n\n');
@@ -212,8 +272,8 @@ async function main(): Promise<void> {
 
     // Assert DB state. streamChat awaits tool execution inline (the
     // tool runs server-side before the stream completes), so by the
-    // time streamChat resolves, the note + agent_action row should
-    // already be persisted.
+    // time streamChat resolves, the note + agent_action + embedding
+    // rows should already be persisted.
     notesRow =
       db
         .prepare<[string], { id: string; title: string }>(
@@ -233,16 +293,34 @@ async function main(): Promise<void> {
             ORDER BY created_at DESC LIMIT 1`,
         )
         .get() ?? null;
+
+    // sqlite-vec extension isn't loaded in the test env, so the
+    // note_chunks_vec table is never created (see migration v3). The
+    // embedding path still runs but writes nothing. We verify the
+    // note_chunks table was populated as proof the path executed.
+    embeddingRowCount = (db
+      .prepare<[string], { c: number }>(
+        `SELECT COUNT(*) AS c FROM note_chunks WHERE note_id = ?`,
+      )
+      .get(notesRow?.id ?? '') ?? { c: 0 }).c;
   } finally {
     global.fetch = realFetch;
     closeDb();
-    if (existsSync(tmpDb)) unlinkSync(tmpDb);
+    // Remove the DB plus better-sqlite3 WAL/SHM sidecars.
+    for (const p of [tmpDb, `${tmpDb}-wal`, `${tmpDb}-shm`]) {
+      if (existsSync(p)) unlinkSync(p);
+    }
   }
 
+  let failed = 0;
   const cases: Case[] = [
     {
-      name: 'streamChat reached the LLM (mock fetch was called at least once)',
-      check: () => callCount.n >= 1,
+      name: 'mock chat endpoint was called at least once',
+      check: () => chatCallCount >= 1,
+    },
+    {
+      name: 'mock embedding endpoint was called at least once',
+      check: () => embeddingCallCount >= 1,
     },
     {
       name: 'SSE events included tool_call for create_note',
@@ -261,11 +339,10 @@ async function main(): Promise<void> {
       check: () => notesRow !== null && notesRow.title === 'smoke test',
     },
     {
-      name: 'DB has an agent_actions row with result=ok-ish and target_note_id set',
+      name: 'DB has an agent_actions row with result="ok" (strict) and target_note_id set',
       check: () =>
         agentActionRow !== null &&
-        (agentActionRow.result === 'ok' ||
-          agentActionRow.result === 'ok_with_embedding_disabled') &&
+        agentActionRow.result === 'ok' &&
         agentActionRow.target_note_id !== null &&
         agentActionRow.error_message === null,
     },
@@ -276,36 +353,41 @@ async function main(): Promise<void> {
         agentActionRow !== null &&
         agentActionRow.target_note_id === notesRow.id,
     },
+    {
+      name: 'note_chunks has rows for the created note (embedding path executed)',
+      check: () => embeddingRowCount !== null && embeddingRowCount > 0,
+    },
   ];
 
-  let failed = 0;
   for (const c of cases) {
     try {
       if (!c.check()) {
-        console.error(`FAIL: ${c.name}`);
+        console.error(`[smoke-agent] FAIL: ${c.name}`);
         if (failed === 0) {
-          // First failure: dump diagnostic context
-          console.error(`  eventTypes: ${eventTypes || '(empty)'}`);
-          console.error(`  callCount: ${callCount.n}`);
+          // First failure: dump diagnostic context.
+          console.error(`[smoke-agent]   eventTypes: ${eventTypes || '(empty)'}`);
+          console.error(`[smoke-agent]   chatCallCount: ${chatCallCount}`);
+          console.error(`[smoke-agent]   embeddingCallCount: ${embeddingCallCount}`);
         }
         failed++;
       } else {
-        console.log(`PASS: ${c.name}`);
+        console.log(`[smoke-agent] PASS: ${c.name}`);
       }
     } catch (err) {
-      console.error(`ERROR in ${c.name}:`, err);
+      console.error(`[smoke-agent] ERROR in ${c.name}:`, err);
       failed++;
     }
   }
 
   if (failed > 0) {
-    console.error(`\n${failed} test(s) failed`);
+    console.error(`\n[smoke-agent] ${failed} test(s) failed`);
     process.exit(1);
   }
-  console.log(`\nAll ${cases.length} tests passed`);
-  // Force exit — Vercel SDK's internal stream cleanup can leave dangling
-  // async work that re-opens the (now-deleted) DB. Exiting immediately
-  // avoids the spurious "no such table: settings" traceback.
+  console.log(`\n[smoke-agent] All ${cases.length} tests passed`);
+  // Force exit — Vercel SDK's internal stream cleanup can leave
+  // dangling async work that re-opens the (now-deleted) DB. Exiting
+  // immediately avoids the spurious "no such table: settings"
+  // traceback. Cleanup already ran in the finally block above.
   process.exit(0);
 }
 
@@ -318,7 +400,7 @@ function chatChunk(payload: Record<string, unknown>): string {
       id: 'chatcmpl-smoke',
       object: 'chat.completion.chunk',
       created: 1700000000,
-      model: 'mock-model-id',
+      model: 'mock-chat-model',
       ...payload,
     }) +
     '\n\n'
@@ -341,7 +423,14 @@ function sseResponse(chunks: string[]): Response {
   });
 }
 
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
 main().catch((err) => {
-  console.error('test runner crashed:', err);
+  console.error('[smoke-agent] test runner crashed:', err);
   process.exit(1);
 });
