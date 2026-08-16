@@ -159,9 +159,9 @@ CREATE TABLE model_configs (
 | POST | `/api/auth/login` | 密码登录，下发 JWT Cookie |
 | POST | `/api/auth/logout` | 清除 Cookie |
 | GET | `/api/notes` | 列表，支持分页、关键字、标签筛选 |
-| POST | `/api/notes` | 新建笔记 |
+| POST | `/api/notes` | 新建笔记。body 二选一：`contentJson`（TipTap doc）或 `contentMarkdown`（服务端 `markdownToTiptap` 转换） |
 | GET | `/api/notes/:id` | 获取单篇 |
-| PUT | `/api/notes/:id` | 更新（同时刷新 FTS、设置 summary_state=stale） |
+| PUT | `/api/notes/:id` | 更新（同时刷新 FTS、设置 summary_state=stale）。body 字段可选，同样支持 `contentMarkdown`；`contentMarkdown` 与 `contentJson` 同传时以前者为准 |
 | DELETE | `/api/notes/:id` | 删除（级联清理 note_tags / 关联 assets） |
 | POST | `/api/notes/:id/summarize` | **SSE 流式**摘要 |
 | PUT | `/api/notes/batch-tags` | 批量修改多篇笔记标签（添加/移除） |
@@ -177,8 +177,9 @@ CREATE TABLE model_configs (
 | GET | `/api/tags` | 列表 |
 | PUT | `/api/tags` | 批量更新（合并/重命名） |
 | POST | `/api/chat` | SSE 流式对话（RAG-lite：FTS5 检索相关笔记） |
+| GET / PUT / DELETE | `/api/settings/agent-api-token` | LAN agent Bearer token 管理（PUT 返回明文一次，GET 只看状态，DELETE 清空） |
 
-所有 `/api/*`（除 `/api/auth/login`）和受保护页面通过 `middleware.ts` 校验 JWT。
+所有 `/api/*`（除 `/api/auth/login`）和受保护页面通过 `middleware.ts` 校验 JWT；`/api/*` 同时支持 `Authorization: Bearer <agent_api_token>`（ticket 11），中间件放行后由路由层 `getSession()` 校验。
 
 ---
 

@@ -3,6 +3,7 @@
 // DELETE /api/notes/:id  — remove a note (cascades)
 
 import { NextResponse, type NextRequest } from 'next/server';
+import type { JSONContent } from '@tiptap/react';
 import { z } from 'zod';
 import { getSession } from '@/lib/auth/session';
 import {
@@ -11,6 +12,7 @@ import {
   updateNote,
   type NoteFull,
 } from '@/lib/notes/queries';
+import { markdownToTiptap } from '@/lib/notes/markdown';
 
 export const runtime = 'nodejs';
 
@@ -20,12 +22,25 @@ const TiptapDocSchema = z
   })
   .passthrough();
 
-const UpdateNoteBody = z.object({
-  title: z.string().min(1).max(500),
-  contentJson: TiptapDocSchema,
-  contentText: z.string().max(200_000).optional(),
-  tags: z.array(z.string().min(1).max(100)).max(50).optional(),
-});
+// All top-level fields are optional; the refine below requires at least one
+// updatable field to be present so a no-op PUT is rejected.
+const UpdateNoteBody = z
+  .object({
+    title: z.string().min(1).max(500).optional(),
+    contentJson: TiptapDocSchema.optional(),
+    contentMarkdown: z.string().max(500_000).optional(),
+    contentText: z.string().max(200_000).optional(),
+    tags: z.array(z.string().min(1).max(100)).max(50).optional(),
+  })
+  .refine(
+    (d) =>
+      d.title !== undefined ||
+      d.contentJson !== undefined ||
+      d.contentMarkdown !== undefined ||
+      d.contentText !== undefined ||
+      d.tags !== undefined,
+    { message: 'at least one field to update is required' },
+  );
 
 interface RouteContext {
   params: { id: string };
@@ -73,13 +88,25 @@ export async function PUT(
     );
   }
 
+  // Resolve the optional content fields. `contentMarkdown` wins over
+  // `contentJson` when both are supplied (a markdown round-trip is more
+  // predictable than trusting the caller to keep both in sync).
+  let contentJson: JSONContent | undefined;
+  let contentText: string | undefined;
+  if (parsed.data.contentMarkdown !== undefined) {
+    const converted = markdownToTiptap(parsed.data.contentMarkdown);
+    contentJson = converted.contentJson;
+    contentText = converted.contentText;
+  } else if (parsed.data.contentJson !== undefined) {
+    contentJson = parsed.data.contentJson as unknown as JSONContent;
+    contentText = parsed.data.contentText;
+  }
+
   try {
     const note = await updateNote(params.id, {
       title: parsed.data.title,
-      contentJson: parsed.data.contentJson as Parameters<
-        typeof updateNote
-      >[1]['contentJson'],
-      contentText: parsed.data.contentText,
+      contentJson,
+      contentText,
       tags: parsed.data.tags,
     });
     if (!note) return notFound();

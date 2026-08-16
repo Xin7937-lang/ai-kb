@@ -163,6 +163,31 @@ docker exec -it ai-kb npm run bootstrap
 
 搞定。后续配好内网穿透后再回来看是否需要加 HTTPS。
 
+### 4.1 LAN agent 访问（Bearer token）
+
+如果同网段另一台机器（脚本、CI、另一个 Claude Code 实例）想直接调 `/api/*`，给它发一个长期 Bearer token，免 cookie：
+
+1. 浏览器登录 → 左侧栏 **设置 → Agent → API Token** → **生成**。界面会一次性显示 64 位 hex，**立刻复制**到调用方机器。
+2. 调用方：
+
+   ```bash
+   curl -sS --noproxy '*' \
+     -H "Authorization: Bearer $TOKEN" \
+     "http://192.168.50.198:3001/api/notes"
+   ```
+
+3. `POST /api/notes` 直接传 Markdown：
+
+   ```bash
+   curl -sS --noproxy '*' \
+     -H "Authorization: Bearer $TOKEN" \
+     -H 'Content-Type: application/json' \
+     -d '{"title":"smoke","contentMarkdown":"# h\n\nbody","tags":["smoke"]}' \
+     "http://192.168.50.198:3001/api/notes"
+   ```
+
+4. token 哈希存在 `/share/Container/ai-kb/data/kb.db` 的 `settings` 表里，**重建镜像不会重置**；要轮换在设置页点 **重新生成**，撤销点 **清除**。
+
 ---
 
 ## 第 5 步：常见踩坑（QNAP / Container Station 特有）

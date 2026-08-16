@@ -183,6 +183,33 @@ export async function GET(request: NextRequest) {
 - Never return `api_key_enc` in responses; only return a mask like `sk-***xxxx`
 - Decrypt only inside server-side provider factory (lib/ai/provider.ts)
 
+## Markdown normalization (`contentMarkdown` ↔ TipTap)
+- `POST /api/notes` and `PUT /api/notes/:id` accept an optional `contentMarkdown` field in the
+  request body. When present, the server converts it via `markdownToTiptap()` in
+  `lib/notes/markdown.ts` (uses `marked` → custom HTML tokenizer → TipTap doc) and stores
+  the resulting `contentJson` + derived `contentText`.
+- Schema rules:
+  - `contentJson` and `contentMarkdown` are both optional at the Zod level, but a
+    `.refine(...)` requires at least one to be present. `PUT` also requires at least one
+    updatable field overall (`title`, `contentJson`, `contentMarkdown`, `contentText`, or `tags`).
+  - When both are supplied, `contentMarkdown` wins (a markdown round-trip is more
+    predictable than trusting the caller to keep both in sync).
+  - `contentMarkdown` is capped at 500_000 characters; larger payloads belong on `POST /api/import`
+    (multipart, supports `.md` / `.txt` / `.zip`).
+- The `notes.content_json` column always stores a TipTap doc, never raw markdown.
+  FTS/embeddings consume `content_text` which is derived server-side.
+
+## Auth: Bearer token (LAN agents)
+- `/api/*` routes accept both an `ai_kb_token` cookie (human path) and an
+  `Authorization: Bearer <agent_api_token>` header (LAN agent path).
+- The Edge middleware (`middleware.ts`) short-circuits on `Authorization: Bearer` for any
+  `/api/*` path and hands off to the Node route handler, which calls `getSession()`
+  to validate the token against `settings.agent_api_token_hash` (ticket 11).
+- Page routes remain cookie-only; bearer headers there do not bypass login.
+- The token hash lives in the bind-mounted SQLite DB, so rebuilding the Docker
+  image does **not** rotate or clear it. Rotate via `PUT /api/settings/agent-api-token`,
+  clear via `DELETE`.
+
 ## Standalone build
 - `next.config.mjs` already has `output: 'standalone'` and `serverComponentsExternalPackages: ['better-sqlite3']`
 - `npm run build` produces `.next/standalone/` with `server.js` ready to run

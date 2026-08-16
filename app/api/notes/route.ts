@@ -2,9 +2,11 @@
 // POST /api/notes  — create a new note
 
 import { NextResponse, type NextRequest } from 'next/server';
+import type { JSONContent } from '@tiptap/react';
 import { z } from 'zod';
 import { getSession } from '@/lib/auth/session';
 import { createNote, listNotes } from '@/lib/notes/queries';
+import { markdownToTiptap } from '@/lib/notes/markdown';
 
 export const runtime = 'nodejs';
 
@@ -21,12 +23,24 @@ const TiptapDocSchema = z
   })
   .passthrough();
 
-const CreateNoteBody = z.object({
-  title: z.string().min(1).max(500),
-  contentJson: TiptapDocSchema,
-  contentText: z.string().max(200_000).optional(),
-  tags: z.array(z.string().min(1).max(100)).max(50).optional(),
-});
+// Either `contentJson` (TipTap doc) or `contentMarkdown` (raw markdown, server
+// converts via markdownToTiptap) is required. Both may be omitted at parse time
+// but the refine below rejects that.
+const CreateNoteBody = z
+  .object({
+    title: z.string().min(1).max(500),
+    contentJson: TiptapDocSchema.optional(),
+    contentMarkdown: z.string().max(500_000).optional(),
+    contentText: z.string().max(200_000).optional(),
+    tags: z.array(z.string().min(1).max(100)).max(50).optional(),
+  })
+  .refine(
+    (d) => d.contentJson !== undefined || d.contentMarkdown !== undefined,
+    {
+      message: 'contentJson or contentMarkdown is required',
+      path: ['contentJson'],
+    },
+  );
 
 const ListQuery = z.object({
   q: z.string().min(1).max(500).optional(),
@@ -93,14 +107,27 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Resolve TipTap JSON + plain text from whichever input the caller provided.
+  // `contentMarkdown` is converted server-side via the shared util; if both
+  // fields are supplied we still honor the caller-provided `contentJson`.
+  let contentJson: JSONContent;
+  let contentText: string | undefined;
+  if (parsed.data.contentMarkdown !== undefined) {
+    const converted = markdownToTiptap(parsed.data.contentMarkdown);
+    contentJson = converted.contentJson;
+    contentText = converted.contentText;
+  } else {
+    // The refine guarantees exactly one is present, and Zod's passthrough
+    // already gave us a shape with `type`; cast through unknown to JSONContent.
+    contentJson = parsed.data.contentJson as unknown as JSONContent;
+    contentText = parsed.data.contentText;
+  }
+
   try {
     const note = await createNote({
       title: parsed.data.title,
-      // The Zod schema guarantees a `type` field; cast to JSONContent.
-      contentJson: parsed.data.contentJson as Parameters<
-        typeof createNote
-      >[0]['contentJson'],
-      contentText: parsed.data.contentText,
+      contentJson,
+      contentText,
       tags: parsed.data.tags,
     });
     return NextResponse.json({ data: note }, { status: 201 });

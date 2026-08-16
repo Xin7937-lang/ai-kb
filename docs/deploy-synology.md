@@ -308,6 +308,34 @@ npm run bootstrap
 - **修改密码**：登录后点击左侧栏 → **设置** → **账户**，在「修改密码」表单中填写当前密码和新密码后保存。修改成功后下次登录使用新密码即可。
   - 若忘记了当前密码，仍可通过 SSH 到 NAS 编辑 `/volume1/docker/ai-kb/.env` 的 `APP_PASSWORD`，然后在项目目录下重新运行 `npm run bootstrap` 来重置密码。
 
+### 7.5 LAN agent 访问（Bearer token）
+
+如果你想让同网段另一台机器（比如另一台电脑、CI runner、另一个 Claude Code 实例）用 HTTP 直接调 `/api/*`（例如脚本批量上传笔记、读全文做摘要），可以给它一个长期 Bearer token，绕开 cookie：
+
+1. 在浏览器登录后，访问左侧栏 **设置 → Agent → API Token**。
+2. 点 **生成**。界面会一次性显示一段 64 位 hex，**立刻复制**到调用方机器（粘进环境变量或 secret store）。关掉页面就再也看不到原文了。
+3. 调用方只需在 HTTP header 里带 `Authorization: Bearer <token>` 即可命中 `/api/*`：
+
+   ```bash
+   curl -sS --noproxy '*' \
+     -H "Authorization: Bearer $TOKEN" \
+     "http://192.168.50.198:3001/api/notes"
+   ```
+
+4. `POST /api/notes` 现在可以直接传 Markdown：
+
+   ```bash
+   curl -sS --noproxy '*' \
+     -H "Authorization: Bearer $TOKEN" \
+     -H 'Content-Type: application/json' \
+     -d '{"title":"smoke","contentMarkdown":"# h\n\nbody","tags":["smoke"]}' \
+     "http://192.168.50.198:3001/api/notes"
+   ```
+
+   服务端会用 `lib/notes/markdown.ts` 里的 `markdownToTiptap()` 把 Markdown 转成 TipTap JSON 后入库。
+
+5. 重新构建/上传镜像**不会**重置 token：哈希存在 `data/kb.db` 绑定卷里。要轮换 token 在设置页点 **重新生成**；要彻底撤销点 **清除**。
+
 ---
 
 ## 8. 配置 AI 模型
