@@ -40,3 +40,6 @@ backups/
 
 # spec / ticket scratch space (local-only working documents)
 .scratch/
+
+# personal prompt-library backup (kept as a local-only note, not project content)
+docs/prompts-library.md

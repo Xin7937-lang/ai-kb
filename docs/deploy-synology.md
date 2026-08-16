@@ -63,10 +63,10 @@ ls -la /volume1/docker/ai-kb/
 
 先在开发机或 NAS 上用文本编辑器创建这个文件（File Station 选中 `ai-kb` 文件夹 → 右键 → 新建文件 → 命名为 `.env`，注意前面有点）。
 
-如果你在本机有项目源码（路径在 `C:\opencode-space\knowledge-base\`），最快的办法是先在源码里准备好再上传：
+如果你在本机有项目源码（路径在 `C:\coding\knowledge-base\`），最快的办法是先在源码里准备好再上传：
 
 ```bash
-cd C:\opencode-space\knowledge-base
+cd C:\coding\knowledge-base
 cp .env.example .env
 notepad .env
 ```
@@ -136,7 +136,7 @@ HOSTNAME=0.0.0.0
 
 ```bash
 # 1. 构建镜像
-cd C:\opencode-space\knowledge-base
+cd C:\coding\knowledge-base
 docker build -f docker/Dockerfile -t ai-kb:latest .
 
 # 2. 导出为 tar 文件
@@ -391,7 +391,7 @@ docker compose up -d
 
 ```bash
 # 开发机
-cd C:\opencode-space\knowledge-base
+cd C:\coding\knowledge-base
 git pull
 docker build -f docker/Dockerfile -t ai-kb:latest .
 docker save -o ai-kb.tar ai-kb:latest

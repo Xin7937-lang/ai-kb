@@ -26,7 +26,19 @@
       "mcp__plugin_playwright_playwright__browser_console_messages",
       "mcp__MiniMax__understand_image",
       "Bash(npx claude-mem *)",
-      "mcp__plugin_playwright_playwright__browser_wait_for"
+      "mcp__plugin_playwright_playwright__browser_wait_for",
+      "Bash(curl *)",
+      "Bash(echo \"--- GET agent-api-token status \\(needs session\\) ---\")",
+      "Bash(echo)",
+      "Bash(echo \"--- HEAD on / to check server is reachable ---\")",
+      "Bash(sqlite3 *)",
+      "Read(//tmp/**)",
+      "Bash(echo '===== 3. PUT /api/notes/__CMDSUB_OUTPUT__ \\(edit\\) =====')",
+      "Bash(echo '===== 4. DELETE /api/notes/__CMDSUB_OUTPUT__ =====')",
+      "Bash(echo \"===== 4b. verify GET returns 404 \\(soft-delete filter\\) =====\")",
+      "Bash(echo \"===== 4c. verify list no longer shows it =====\")",
+      "Bash(docker exec *)",
+      "Bash(git add *)"
     ]
   }
 }

@@ -13,7 +13,7 @@ and historical file ownership boundaries.
 ## Project layout (current)
 
 ```
-C:\opencode-space\knowledge-base\
+C:\coding\knowledge-base\
 ├── app/
 │   ├── (auth)/login/{page.tsx, login-form.tsx}
 │   ├── (app)/
