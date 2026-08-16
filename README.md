@@ -18,6 +18,8 @@
 - ✅ S10 部署文档：群晖 `docs/deploy-synology.md` + 威联通 `docs/deploy-qnap.md`
 - ✅ RAG-lite 对话：`/chat` 基于 FTS5 + sqlite-vec 混合检索（RRF 融合）；可选 web search 兜底
 - ✅ Agent 工具调用（stage 1 + 2）：`read_note` / `create_note` / `edit_note` / `delete_note`，开关默认关闭（`settings/agent-tools-enabled`），全部操作审计（`agent_actions` 表），单回合限额（`settings/agent-tool-limit`），spec 与 ticket 见 `docs/agent-crud/`
+- ✅ LAN agent Bearer token：Edge 中间件对 `/api/*` 放行 `Authorization: Bearer`，路由层 `getSession()` 用 `settings.agent_api_token_hash` 校验（`docs/agent-crud/tickets/11-agent-api-token.md` 的 HTTP 边界闭环）
+- ✅ `POST /api/notes` / `PUT /api/notes/:id` 新增 `contentMarkdown` 字段，服务端用 `markdownToTiptap()` 归一化到 TipTap JSON（同步更新 `KB-MVP.md`、`CONTRACTS.md`、两份部署手册、共享的 `kb-agent-instructions.md`）
 
 ## 快速开始（开发）
 
