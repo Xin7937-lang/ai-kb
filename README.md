@@ -111,3 +111,5 @@ npm run dev
 - **群晖 WebStation 上的 SSE**：`/api/chat` 与 `/api/notes/*/summarize` 用 SSE 流式输出。WebStation 默认不开 WebSocket，SSE 事件可能被代理缓冲到响应结束才下发，浏览器看起来像"卡住"。若遇到此问题按 `docs/deploy-synology.md` 调整反代 buffering。
 - **本地 agent 状态**：仓库根的 `.omo/` 与各子项目里的 `.playwright-mcp/` 是本地 agent 运行状态，**不要 commit**。根 `.gitignore` 已屏蔽。
 - **手动改数据库**：唯一已知的"安全路径"是 `npx tsx scripts/smoke-db.ts`（迁移/加解密/认证变更后跑一次）。不要直接编辑 `data/kb.db`。
+- **LAN agent 上传 Markdown**：仓库自带 `scripts/build-md-payload.ts`，把 `.md` 变 `POST /api/notes` 的 JSON 字段，一行命令搞定（实测 5KB ~17ms / 15KB ~48ms）。详见 `kb-agent-instructions.md`（网络共享 `\\EQ12WIN\EQ12_share\`）的 §7。
+- **Windows Git Bash 里的 `jq`**：经常 hang。解析本工具产出的 JSON 用 `python -c "import json; print(json.load(open('x.json'))['data']['token'])"`。
