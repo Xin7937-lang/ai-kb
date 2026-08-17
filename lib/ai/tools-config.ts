@@ -15,26 +15,39 @@
 
 import type { CoreTool } from 'ai';
 
-import { getAgentToolLimit, getAgentToolsEnabled } from '@/lib/auth/init';
+import { getAgentBatchEditDeleteEnabled, getAgentToolLimit, getAgentToolsEnabled } from '@/lib/auth/init';
 
 import { createNoteTool } from './tools/create_note';
 import { readNoteTool } from './tools/read_note';
 import { editNoteTool } from './tools/edit_note';
 import { deleteNoteTool } from './tools/delete_note';
 import { makeRateLimiter, withRateLimit } from './tools/rate-limit';
+import { makeBatchEditDeleteCounter, withBatchEditDeleteGuard } from './tools/batch-guard';
 
 export type ToolsConfig = Record<string, CoreTool>;
 
 export function buildToolsConfig(): ToolsConfig {
   if (!getAgentToolsEnabled()) return {};
   const limiter = makeRateLimiter(getAgentToolLimit());
+  const batchCounter = makeBatchEditDeleteCounter();
+  const batchEnabled = getAgentBatchEditDeleteEnabled();
   // withRateLimit preserves description / parameters / etc. via the
   // spread inside the helper and is generic in the input tool type,
   // so the returned CoreTool types flow through unchanged.
   return {
     create_note: withRateLimit(createNoteTool, limiter),
     read_note: withRateLimit(readNoteTool, limiter),
-    edit_note: withRateLimit(editNoteTool, limiter),
-    delete_note: withRateLimit(deleteNoteTool, limiter),
+    edit_note: withBatchEditDeleteGuard(
+      withRateLimit(editNoteTool, limiter),
+      batchCounter,
+      batchEnabled,
+      'edit_note',
+    ),
+    delete_note: withBatchEditDeleteGuard(
+      withRateLimit(deleteNoteTool, limiter),
+      batchCounter,
+      batchEnabled,
+      'delete_note',
+    ),
   };
 }

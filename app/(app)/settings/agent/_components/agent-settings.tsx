@@ -35,12 +35,26 @@ type AgentAction = {
 
 const PAGE_SIZE = 20;
 
-export function AgentSettings({ initialEnabled }: { initialEnabled: boolean }) {
+export function AgentSettings({
+  initialEnabled,
+  initialBatchEditDeleteEnabled,
+}: {
+  initialEnabled: boolean;
+  initialBatchEditDeleteEnabled: boolean;
+}) {
   const [enabled, setEnabled] = useState(initialEnabled);
   const [saveStatus, setSaveStatus] = useState<
     'idle' | 'saving' | 'saved' | 'error'
   >('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  const [batchEditDeleteEnabled, setBatchEditDeleteEnabled] = useState(
+    initialBatchEditDeleteEnabled,
+  );
+  const [batchSaveStatus, setBatchSaveStatus] = useState<
+    'idle' | 'saving' | 'saved' | 'error'
+  >('idle');
+  const [batchSaveError, setBatchSaveError] = useState<string | null>(null);
 
   const [actions, setActions] = useState<AgentAction[] | null>(null);
   const [auditError, setAuditError] = useState<string | null>(null);
@@ -131,6 +145,37 @@ export function AgentSettings({ initialEnabled }: { initialEnabled: boolean }) {
       });
   }
 
+  function onBatchEditDeleteToggle(next: boolean) {
+    setBatchEditDeleteEnabled(next);
+    setBatchSaveError(null);
+    setBatchSaveStatus('saving');
+    fetch('/api/settings/agent-batch-edit-delete-enabled', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: next }),
+    })
+      .then(async (res) => {
+        const json = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          message?: string;
+        };
+        if (!res.ok) {
+          setBatchSaveStatus('error');
+          setBatchSaveError(json.message ?? json.error ?? '保存失败');
+          setBatchEditDeleteEnabled(!next);
+          return;
+        }
+        setBatchSaveStatus('saved');
+        setTimeout(() => setBatchSaveStatus('idle'), 1500);
+      })
+      .catch((err) => {
+        console.error('[agent-settings] batch toggle failed:', err);
+        setBatchSaveStatus('error');
+        setBatchSaveError('网络错误，请重试');
+        setBatchEditDeleteEnabled(!next);
+      });
+  }
+
   const pageStart = page * PAGE_SIZE + 1;
   const pageEnd = page * PAGE_SIZE + (actions?.length ?? 0);
 
@@ -170,6 +215,49 @@ export function AgentSettings({ initialEnabled }: { initialEnabled: boolean }) {
           {saveError ? (
             <p className="text-sm text-destructive" role="alert">
               {saveError}
+            </p>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Bot className="h-4 w-4" />
+            批量编辑与删除
+          </CardTitle>
+          <CardDescription>
+            开启后，同一轮对话中 AI 可以多次调用 edit_note / delete_note。
+            关闭时仅允许每轮执行一次修改或删除，降低误操作风险。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-3">
+            <Switch
+              id="agent-batch-edit-delete-enabled"
+              checked={batchEditDeleteEnabled}
+              onCheckedChange={onBatchEditDeleteToggle}
+              disabled={!enabled}
+            />
+            <Label
+              htmlFor="agent-batch-edit-delete-enabled"
+              className={enabled ? 'cursor-pointer' : 'cursor-not-allowed text-muted-foreground'}
+            >
+              {batchEditDeleteEnabled ? '已允许' : '已禁止'}
+            </Label>
+            <span aria-live="polite" className="ml-auto text-xs text-muted-foreground">
+              {batchSaveStatus === 'saving'
+                ? '保存中…'
+                : batchSaveStatus === 'saved'
+                  ? '已保存'
+                  : batchSaveStatus === 'error'
+                    ? '保存失败'
+                    : ''}
+            </span>
+          </div>
+          {batchSaveError ? (
+            <p className="text-sm text-destructive" role="alert">
+              {batchSaveError}
             </p>
           ) : null}
         </CardContent>

@@ -28,19 +28,27 @@ type Case = {
 async function main(): Promise<void> {
   const { migrate } = await import('../db/migrate');
   const { getDb, closeDb } = await import('../db/client');
-  const { setSetting, getAgentToolsEnabled, getAgentToolLimit } =
-    await import('./init');
+  const {
+    setSetting,
+    getAgentToolsEnabled,
+    getAgentToolLimit,
+    getAgentBatchEditDeleteEnabled,
+  } = await import('./init');
 
   // All values are captured while the DB is open, then the DB is
   // closed + the file deleted before case iteration runs.
   let capturedEnabled: boolean | null = null;
   let capturedLimit: number | null = null;
+  let capturedBatch: boolean | null = null;
   let enabledAfterTrue: boolean | null = null;
   let enabledAfterBad: boolean | null = null;
   let limitAfter20: number | null = null;
   let limitAfterBad: number | null = null;
+  let batchAfterTrue: boolean | null = null;
+  let batchAfterBad: boolean | null = null;
   let enabledAfterClear: boolean | null = null;
   let limitAfterClear: number | null = null;
+  let batchAfterClear: boolean | null = null;
 
   try {
     migrate();
@@ -48,9 +56,10 @@ async function main(): Promise<void> {
     const db = getDb();
 
     // Default seeded values (v9 migration seeds agent_tools_enabled='false',
-    // agent_tool_limit='5').
+    // agent_tool_limit='5'; v11 seeds agent_batch_edit_delete_enabled='false').
     capturedEnabled = getAgentToolsEnabled();
     capturedLimit = getAgentToolLimit();
+    capturedBatch = getAgentBatchEditDeleteEnabled();
 
     setSetting('agent_tools_enabled', 'true');
     enabledAfterTrue = getAgentToolsEnabled();
@@ -64,13 +73,21 @@ async function main(): Promise<void> {
     setSetting('agent_tool_limit', 'not-a-number');
     limitAfterBad = getAgentToolLimit();
 
+    setSetting('agent_batch_edit_delete_enabled', 'true');
+    batchAfterTrue = getAgentBatchEditDeleteEnabled();
+
+    setSetting('agent_batch_edit_delete_enabled', 'not-a-bool');
+    batchAfterBad = getAgentBatchEditDeleteEnabled();
+
     // Clear settings → fall back to defaults
-    db.prepare('DELETE FROM settings WHERE key IN (?, ?)').run(
+    db.prepare('DELETE FROM settings WHERE key IN (?, ?, ?)').run(
       'agent_tools_enabled',
       'agent_tool_limit',
+      'agent_batch_edit_delete_enabled',
     );
     enabledAfterClear = getAgentToolsEnabled();
     limitAfterClear = getAgentToolLimit();
+    batchAfterClear = getAgentBatchEditDeleteEnabled();
   } finally {
     closeDb();
     if (existsSync(tmpDb)) unlinkSync(tmpDb);
@@ -108,6 +125,22 @@ async function main(): Promise<void> {
     {
       name: 'getAgentToolLimit() → 5 when setting is malformed (fallback default)',
       check: () => limitAfterBad === 5,
+    },
+    {
+      name: 'getAgentBatchEditDeleteEnabled() → false when setting is "false" (default)',
+      check: () => capturedBatch === false,
+    },
+    {
+      name: 'getAgentBatchEditDeleteEnabled() → true when setting is "true"',
+      check: () => batchAfterTrue === true,
+    },
+    {
+      name: 'getAgentBatchEditDeleteEnabled() → false when setting is missing',
+      check: () => batchAfterClear === false,
+    },
+    {
+      name: 'getAgentBatchEditDeleteEnabled() → false when setting is malformed',
+      check: () => batchAfterBad === false,
     },
   ];
 

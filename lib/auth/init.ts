@@ -171,6 +171,21 @@ export function setAgentToolLimit(limit: number): void {
   setSetting(AGENT_TOOL_LIMIT_KEY, String(Math.round(limit)));
 }
 
+export const AGENT_BATCH_EDIT_DELETE_ENABLED_KEY =
+  'agent_batch_edit_delete_enabled';
+export const AGENT_BATCH_EDIT_DELETE_ENABLED_DEFAULT = false;
+
+export function getAgentBatchEditDeleteEnabled(): boolean {
+  return getSetting(AGENT_BATCH_EDIT_DELETE_ENABLED_KEY) === 'true';
+}
+
+export function setAgentBatchEditDeleteEnabled(enabled: boolean): void {
+  setSetting(
+    AGENT_BATCH_EDIT_DELETE_ENABLED_KEY,
+    enabled ? 'true' : 'false',
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Agent API bearer token (ticket 11 — LAN-agent access)
 // ---------------------------------------------------------------------------

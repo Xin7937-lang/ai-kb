@@ -13,10 +13,9 @@ type Case = {
   check: () => boolean;
 };
 
-let promptText = '';
-
 async function main(): Promise<void> {
-  promptText = buildChatSystemPrompt(false, false);
+  const disabledPrompt = buildChatSystemPrompt(false, false, false);
+  const enabledPrompt = buildChatSystemPrompt(false, false, true);
 
   const cases: Case[] = [
     // S5 — anti-injection: prompt must warn about treating note
@@ -24,14 +23,14 @@ async function main(): Promise<void> {
     {
       name: 'contains anti-injection paragraph (mentions note content + untrusted / instructions)',
       check: () => {
-        const lower = promptText.toLowerCase();
+        const lower = disabledPrompt.toLowerCase();
         // Look for the chinese keywords we plan to put in the prompt.
         return (
-          promptText.includes('不可信') ||
-          promptText.includes('不可信输入') ||
-          promptText.includes('指令') ||
-          promptText.includes('当作数据') ||
-          promptText.includes('当作指令')
+          disabledPrompt.includes('不可信') ||
+          disabledPrompt.includes('不可信输入') ||
+          disabledPrompt.includes('指令') ||
+          disabledPrompt.includes('当作数据') ||
+          disabledPrompt.includes('当作指令')
         );
       },
     },
@@ -39,23 +38,23 @@ async function main(): Promise<void> {
     // S6 — tool list: must enumerate create_note + read_note + edit_note + delete_note.
     {
       name: 'explicitly lists create_note as available tool',
-      check: () => promptText.includes('create_note'),
+      check: () => disabledPrompt.includes('create_note'),
     },
     {
       name: 'explicitly lists read_note as available tool',
-      check: () => promptText.includes('read_note'),
+      check: () => disabledPrompt.includes('read_note'),
     },
     {
       name: 'explicitly lists edit_note as available tool',
-      check: () => promptText.includes('edit_note'),
+      check: () => disabledPrompt.includes('edit_note'),
     },
     {
       name: 'explicitly lists delete_note as available tool',
-      check: () => promptText.includes('delete_note'),
+      check: () => disabledPrompt.includes('delete_note'),
     },
     {
       name: 'does NOT mention a nonexistent tool (e.g. summarize_note)',
-      check: () => !promptText.includes('summarize_note'),
+      check: () => !disabledPrompt.includes('summarize_note'),
     },
 
     // S7 — no-fabrication: must forbid claiming actions that
@@ -63,16 +62,30 @@ async function main(): Promise<void> {
     {
       name: 'forbids claiming to perform actions you did not perform',
       check: () => {
-        const lower = promptText.toLowerCase();
+        const lower = disabledPrompt.toLowerCase();
         return (
-          promptText.includes('不要声称') ||
-          promptText.includes('不要假装') ||
-          promptText.includes('未执行') ||
-          promptText.includes('未实际') ||
-          promptText.includes('不要捏造') ||
-          promptText.includes('不要伪造')
+          disabledPrompt.includes('不要声称') ||
+          disabledPrompt.includes('不要假装') ||
+          disabledPrompt.includes('未执行') ||
+          disabledPrompt.includes('未实际') ||
+          disabledPrompt.includes('不要捏造') ||
+          disabledPrompt.includes('不要伪造')
         );
       },
+    },
+
+    // Batch edit/delete guard prompt rule.
+    {
+      name: 'disabled prompt contains batch edit/delete restriction rule',
+      check: () =>
+        disabledPrompt.includes('批量修改限制') &&
+        disabledPrompt.includes('设置 → Agent') &&
+        disabledPrompt.includes('edit_note') &&
+        disabledPrompt.includes('delete_note'),
+    },
+    {
+      name: 'enabled prompt does NOT contain batch restriction rule',
+      check: () => !enabledPrompt.includes('批量修改限制'),
     },
   ];
 
@@ -81,7 +94,7 @@ async function main(): Promise<void> {
     try {
       if (!c.check()) {
         console.error(`FAIL: ${c.name}`);
-        console.error(`  prompt length: ${promptText.length}`);
+        console.error(`  disabled prompt length: ${disabledPrompt.length}`);
         failed++;
       } else {
         console.log(`PASS: ${c.name}`);
