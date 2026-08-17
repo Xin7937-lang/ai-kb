@@ -3,6 +3,7 @@
 // Run: npx tsx lib/storage/upload-path.test.ts
 
 import path from 'path';
+import { tmpdir } from 'os';
 import { resolveUploadPath } from './upload-path';
 
 type Case = {
@@ -10,7 +11,7 @@ type Case = {
   check: () => boolean;
 };
 
-const root = path.join('tmp', 'ai-kb-uploads');
+const root = path.join(tmpdir(), 'ai-kb-upload-path-test');
 const resolvedRoot = path.resolve(root);
 
 const cases: Case[] = [

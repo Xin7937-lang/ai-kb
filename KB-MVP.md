@@ -165,7 +165,7 @@ CREATE TABLE model_configs (
 | DELETE | `/api/notes/:id` | 删除（级联清理 note_tags / 关联 assets） |
 | POST | `/api/notes/:id/summarize` | **SSE 流式**摘要 |
 | PUT | `/api/notes/batch-tags` | 批量修改多篇笔记标签（添加/移除） |
-| POST | `/api/uploads` | multipart 上传图片（文件选择与剪贴板图片共用），返回 `{ url, assetId }` |
+| POST | `/api/uploads` | multipart 上传图片（文件选择与剪贴板图片共用），返回 `{ data: { url, assetId } }` |
 | GET | `/uploads/*` | 静态托管（Next.js 自定义 route） |
 | POST | `/api/import` | 上传 md/txt/zip 解析入库 |
 | GET | `/api/export` | `?scope=all` 或 `?scope=note&id=...`，流式 zip |

@@ -104,7 +104,8 @@ export function TiptapEditor({
         const currentEditor = editorRef.current;
         if (!currentEditor) return true;
 
-        const bookmark = view.state.selection.getBookmark();
+        const selectionFrom = view.state.selection.from;
+        const selectionTo = view.state.selection.to;
         const mapping = view.state.tr.mapping;
         const onTransaction = ({ transaction }: { transaction: Transaction }) => {
           if (transaction.docChanged) {
@@ -118,10 +119,11 @@ export function TiptapEditor({
           if (currentEditor.isDestroyed) return;
 
           try {
-            const selection = bookmark.map(mapping).resolve(currentEditor.state.doc);
+            const from = mapping.map(selectionFrom, -1);
+            const to = mapping.map(selectionTo, -1);
             const inserted = currentEditor
               .chain()
-              .setTextSelection({ from: selection.from, to: selection.to })
+              .setTextSelection({ from, to })
               .focus()
               .setImage({ src: url })
               .run();
