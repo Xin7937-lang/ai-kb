@@ -6,6 +6,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { EditorContent, useEditor, type JSONContent } from '@tiptap/react';
+import type { Transaction } from '@tiptap/pm/state';
 import { StarterKit } from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Image from '@tiptap/extension-image';
@@ -33,6 +34,7 @@ import {
 import { cn } from '@/lib/utils';
 import { extractText } from '@/lib/notes/text-extract';
 import { EMPTY_TIPTAP_DOC } from '@/lib/notes/tiptap-init';
+import { selectClipboardImage } from '@/lib/storage/clipboard-image';
 
 export type TiptapEditorProps = {
   value: JSONContent | null;
@@ -50,6 +52,8 @@ export function TiptapEditor({
   className,
 }: TiptapEditorProps) {
   const [isUploading, setIsUploading] = useState(false);
+  const isUploadingRef = useRef(false);
+  const editorRef = useRef<ReturnType<typeof useEditor>>(null);
   // We have to pass `null!` here because @types/react's `useRef` only infers
   // a JSX-compatible RefObject (not a RefObject<HTMLInputElement | null>) when
   // the type parameter is the non-null T. The current value can still be null
@@ -88,11 +92,60 @@ export function TiptapEditor({
       attributes: {
         class: 'ProseMirror prose-sm sm:prose-base max-w-none focus:outline-none',
       },
+      handlePaste(view, event) {
+        const image = selectClipboardImage<File>(
+          event.clipboardData ? Array.from(event.clipboardData.items) : [],
+        );
+        if (!image) return false;
+
+        event.preventDefault();
+        if (isUploadingRef.current) return true;
+
+        const currentEditor = editorRef.current;
+        if (!currentEditor) return true;
+
+        const selectionFrom = view.state.selection.from;
+        const selectionTo = view.state.selection.to;
+        const mapping = view.state.tr.mapping;
+        const onTransaction = ({ transaction }: { transaction: Transaction }) => {
+          if (transaction.docChanged) {
+            mapping.appendMapping(transaction.mapping);
+          }
+        };
+        currentEditor.on('transaction', onTransaction);
+
+        void uploadImage(image, (url) => {
+          currentEditor.off('transaction', onTransaction);
+          if (currentEditor.isDestroyed) return;
+
+          try {
+            const from = mapping.map(selectionFrom, -1);
+            const to = mapping.map(selectionTo, -1);
+            const inserted = currentEditor
+              .chain()
+              .setTextSelection({ from, to })
+              .focus()
+              .setImage({ src: url })
+              .run();
+            if (!inserted) {
+              throw new Error('editor rejected the image insertion');
+            }
+          } catch (err) {
+            console.error('[tiptap-editor] clipboard image insert failed:', err);
+            alert('Image upload succeeded but could not be inserted');
+          }
+        }).finally(() => {
+          currentEditor.off('transaction', onTransaction);
+        });
+
+        return true;
+      },
     },
     onUpdate({ editor: e }) {
       onChange(e.getJSON(), extractText(e.getJSON()));
     },
   });
+  editorRef.current = editor;
 
   // When the value prop changes from outside (e.g. after a refetch), update
   // the editor only if the JSON actually differs -- otherwise we'd reset the
@@ -113,8 +166,12 @@ export function TiptapEditor({
     }
   }, [editor, editable]);
 
-  async function handleFileSelected(file: File) {
-    if (!editor) return;
+  async function uploadImage(
+    file: File,
+    onUploaded: (url: string) => void,
+  ): Promise<void> {
+    if (isUploadingRef.current) return;
+    isUploadingRef.current = true;
     setIsUploading(true);
     try {
       const fd = new FormData();
@@ -137,20 +194,36 @@ export function TiptapEditor({
         alert('Image upload failed: server did not return a URL');
         return;
       }
-      editor.chain().focus().setImage({ src: url }).run();
+
+      try {
+        onUploaded(url);
+      } catch (err) {
+        console.error('[tiptap-editor] image insert failed:', err);
+        alert('Image upload succeeded but could not be inserted');
+      }
     } catch (err) {
       console.error('[tiptap-editor] upload failed:', err);
       const message = err instanceof Error ? err.message : 'unknown error';
       alert(`Image upload failed: ${message}`);
     } finally {
+      isUploadingRef.current = false;
       setIsUploading(false);
       // Reset the input so picking the same file again still fires `change`.
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   }
 
+  async function handleFileSelected(file: File) {
+    const currentEditor = editorRef.current;
+    if (!currentEditor) return;
+    await uploadImage(file, (url) => {
+      if (currentEditor.isDestroyed) return;
+      currentEditor.chain().focus().setImage({ src: url }).run();
+    });
+  }
+
   function openFilePicker() {
-    if (isUploading) return;
+    if (isUploadingRef.current) return;
     fileInputRef.current?.click();
   }
 
