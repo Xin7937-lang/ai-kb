@@ -154,6 +154,35 @@ export function deleteSearchProviderConfig(
     .run(`search_provider_${type}_${param}`);
 }
 
+export type SearchProviderConfigRow = {
+  key: string;
+  value: string;
+};
+
+/**
+ * Convert settings rows into the public provider-config shape.
+ *
+ * API keys use the same settings prefix as provider parameters, but they
+ * must never be returned as ordinary config values. The settings form sends
+ * this object back on save, so exposing the key row would let an old
+ * ciphertext overwrite a newly encrypted key.
+ */
+export function parseSearchProviderConfigRows(
+  rows: SearchProviderConfigRow[],
+): Record<string, Record<string, string>> {
+  const result: Record<string, Record<string, string>> = {};
+  for (const { key, value } of rows) {
+    const parts = key.split('_');
+    if (parts.length < 4) continue;
+    const type = parts[2];
+    const param = parts.slice(3).join('_');
+    if (param === 'key') continue;
+    if (!result[type]) result[type] = {};
+    result[type][param] = value;
+  }
+  return result;
+}
+
 /** Read all stored configs for every provider. */
 export function getAllProviderConfigs(): Record<string, Record<string, string>> {
   const rows = getDb()
@@ -161,16 +190,7 @@ export function getAllProviderConfigs(): Record<string, Record<string, string>> 
       "SELECT key, value FROM settings WHERE key LIKE 'search_provider_%_%'",
     )
     .all();
-  const result: Record<string, Record<string, string>> = {};
-  for (const { key, value } of rows) {
-    const parts = key.split('_');
-    if (parts.length < 4) continue;
-    const type = parts[2];
-    const param = parts.slice(3).join('_');
-    if (!result[type]) result[type] = {};
-    result[type][param] = value;
-  }
-  return result;
+  return parseSearchProviderConfigRows(rows);
 }
 
 // ── Typed param helpers ─────────────────────────────────────────

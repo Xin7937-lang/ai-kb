@@ -92,6 +92,7 @@ export async function PUT(request: NextRequest) {
     for (const [type, params] of Object.entries(data.configs)) {
       if (!PROVIDERS.includes(type as SearchProviderType)) continue;
       for (const [param, value] of Object.entries(params)) {
+        if (param === 'key') continue;
         setSearchProviderConfig(type as SearchProviderType, param, value);
       }
     }
