@@ -144,6 +144,7 @@ export async function GET(request: NextRequest) {
 - Static assets: relative to UPLOADS_DIR, format `YYYY/MM/<nanoid>.<ext>`
 - DB stores `rel_path` (relative to UPLOADS_DIR)
 - Public URL: `/uploads/YYYY/MM/<nanoid>.<ext>`
+- TipTap file selection and clipboard image paste both POST multipart `file` data to `/api/uploads`; the route requires a session and returns `{ data: { url, assetId } }`. Clipboard paste accepts only the existing PNG/JPEG/GIF/WebP/SVG allowlist and falls back to normal TipTap paste for other clipboard content.
 
 ### shadcn components
 - Already available: `Button`, `Input`, `Label`, `Card`
@@ -155,7 +156,7 @@ export async function GET(request: NextRequest) {
 | Workstream | May CREATE | May MODIFY | Must NOT touch |
 |---|---|---|---|
 | **S4** notes CRUD | `app/api/notes/**`, `app/api/tags/**`, `app/(app)/notes/**`, `components/notes/**`, `components/editor/**`, `lib/notes/**` | `app/(app)/layout.tsx` (add sidebar), `app/(app)/page.tsx` (replace with notes list) | `lib/auth/*`, `lib/db/*`, `lib/ai/*`, `lib/crypto.ts`, `middleware.ts`, `app/api/auth/*`, `app/api/models/*`, `app/api/uploads/*` |
-| **S5** image upload | `app/api/uploads/**`, `app/api/uploads/[...path]/route.ts` (static serve), `lib/storage/uploads.ts`, `components/editor/tiptap-editor.tsx` (add Image extension) | — | as above + `lib/notes/*` |
+| **S5** image upload | `app/api/uploads/route.ts`, `app/uploads/[...path]/route.ts` (static serve), `lib/storage/uploads.ts`, `components/editor/tiptap-editor.tsx` (file picker + clipboard paste) | — | as above + `lib/notes/*` |
 | **S6** import/export | `app/api/import/route.ts`, `app/api/export/route.ts`, `lib/storage/archive.ts`, `lib/notes/markdown.ts` (MD→TipTap conversion) | — | as above |
 | **S7** model mgmt | `app/api/models/**`, `app/(app)/settings/**`, `components/models/**`, `lib/ai/provider.ts`, `lib/ai/test.ts` | — (sidebar link added by S4 already) | `lib/auth/*`, `lib/db/*`, `lib/crypto.ts`, `app/api/notes/*`, `app/api/uploads/*` |
 | **S8** AI summary | `app/api/notes/[id]/summarize/route.ts`, `lib/ai/summarize.ts`, `lib/ai/prompts.ts` | `components/notes/note-view.tsx` (add summary button) — but only if S4 created it; otherwise create the component | as above |

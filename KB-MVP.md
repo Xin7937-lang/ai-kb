@@ -11,7 +11,7 @@
 
 ### 1.1 MVP 包含
 
-- **M1 基础**：单密码登录、笔记 CRUD（图文）、标签、全文搜索
+- **M1 基础**：单密码登录、笔记 CRUD（图文，支持文件选择和剪贴板图片粘贴）、标签、全文搜索
 - **M2 导入导出**：Markdown / TXT / zip 导入；单篇 zip / 全量备份 zip 导出
 - **M3 AI 摘要 + 模型管理**：多家国内模型可配置切换；笔记一键流式摘要
 - **M4 与笔记对话（RAG-lite）**：FTS5 + sqlite-vec 混合检索，RRF 融合；可选 web search 兜底
@@ -165,7 +165,7 @@ CREATE TABLE model_configs (
 | DELETE | `/api/notes/:id` | 删除（级联清理 note_tags / 关联 assets） |
 | POST | `/api/notes/:id/summarize` | **SSE 流式**摘要 |
 | PUT | `/api/notes/batch-tags` | 批量修改多篇笔记标签（添加/移除） |
-| POST | `/api/uploads` | multipart 上传图片，返回 `{ url, assetId }` |
+| POST | `/api/uploads` | multipart 上传图片（文件选择与剪贴板图片共用），返回 `{ url, assetId }` |
 | GET | `/uploads/*` | 静态托管（Next.js 自定义 route） |
 | POST | `/api/import` | 上传 md/txt/zip 解析入库 |
 | GET | `/api/export` | `?scope=all` 或 `?scope=note&id=...`，流式 zip |
@@ -215,7 +215,7 @@ cs_space/
 │ ├── chat/route.ts
 │ └── settings/route.ts
 ├── components/
-│ ├── editor/ ← TipTap 配置 + 图片扩展
+│ ├── editor/ ← TipTap 配置 + 图片扩展 + 剪贴板图片粘贴
 │ ├── notes/ ← 列表项、筛选条
 │ ├── models/ ← 模型表单、测试按钮
 │ └── ui/ ← shadcn 生成物

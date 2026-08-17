@@ -11,6 +11,7 @@
 - ✅ S3 认证：bcrypt 密码 + JWT Cookie + middleware 路由保护
 - ✅ S4 笔记基础：CRUD + TipTap 编辑器 + 标签 + FTS5 全文搜索
 - ✅ S5 图片上传：multipart 上传 + TipTap Image 扩展 + 静态托管
+- ✅ 编辑器剪贴板图片粘贴：支持同步 paste 事件中的 PNG/JPEG/GIF/WebP/SVG 图片，并复用现有上传链路
 - ✅ S6 导入导出：Markdown / TXT / zip 导入；单篇 zip / 全量备份 zip 导出
 - ✅ S7 模型管理：模型 CRUD + 加密存储 + 连接测试
 - ✅ S8 AI 摘要：SSE 流式摘要 + stale 标记
@@ -56,7 +57,7 @@ npm run dev
 ├── components/
 │   ├── ui/                 # shadcn 组件
 │   ├── chat/               # 对话窗口
-│   ├── editor/             # TipTap 配置
+│   ├── editor/             # TipTap 配置、图片上传与剪贴板粘贴
 │   ├── notes/              # 笔记列表/筛选
 │   └── models/             # 模型管理 UI
 ├── lib/
@@ -95,7 +96,7 @@ npm run dev
 | S9 容器化 | ✅ | Dockerfile + compose |
 | S10 部署文档 | ✅ | 群晖 + 威联通手册 |
 | RAG 对话 | ✅ | `/chat` 混合检索：FTS5 BM25 + sqlite-vec KNN (2048d)，RRF 融合 + 多信号重排（时效 × 标题命中）+ 单条多样性上限；可选 web search 兜底（设置 `settings/chat-web-search`） |
-| 编辑器增强 | ✅ | 30 秒自动保存、对话一键存为笔记 |
+| 编辑器增强 | ✅ | 30 秒自动保存、对话一键存为笔记、剪贴板图片粘贴 |
 | Agent 工具调用 stage 1 | ✅ | `read_note` / `create_note`，开关默认关闭，写操作全量审计（`agent_actions` 表） |
 | Agent 工具调用 stage 2 | ✅ | `edit_note` / `delete_note`（soft-delete），保留 4 工具的共享单回合限额；spec 与 ticket 见 [`docs/agent-crud/`](./docs/agent-crud/) |
 
