@@ -117,8 +117,14 @@ export function buildChatContext(
 export function buildChatSystemPrompt(
   _webSearchEnabled: boolean,
   _hasSources: boolean,
+  batchEditDeleteEnabled: boolean = false,
 ): string {
   // webSearchEnabled 和 hasSources 不再影响 system prompt 的基线规则。
   // 统一使用允许模型知识 fallback 的版本，外部搜索结果通过追加 section 注入。
-  return CHAT_SYSTEM_PROMPT;
+  const batchRule = batchEditDeleteEnabled
+    ? ''
+    : '\n12. 批量修改限制：在同一轮对话中，你最多只能执行一次 edit_note 或 delete_note。' +
+      '如果同一轮中需要修改或删除多个笔记，请先请用户到「设置 → Agent」开启「允许批量编辑和删除」开关；' +
+      '否则第二次及以上的调用会被拒绝，并返回本说明。';
+  return CHAT_SYSTEM_PROMPT + batchRule;
 }

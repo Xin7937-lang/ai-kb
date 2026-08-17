@@ -29,6 +29,7 @@ import { buildChatContext, buildChatSystemPrompt } from './prompts';
 import { searchRelevantChunks } from './retrieval';
 import type { RetrievedChunk } from './retrieval-types';
 import { searchWeb } from '@/lib/search';
+import { getAgentBatchEditDeleteEnabled } from '@/lib/auth/init';
 import { buildToolsConfig } from './tools-config';
 import { mapStreamPartToSseEvent } from './chat-sse';
 
@@ -140,7 +141,8 @@ export async function streamChat(
     })),
   );
 
-  const systemPrompt = `${buildChatSystemPrompt(opts.webSearchEnabled ?? false, hasSources)}\n\n# 检索到的笔记\n\n${context}${webSearchContext}`;
+  const batchEditDeleteEnabled = getAgentBatchEditDeleteEnabled();
+  const systemPrompt = `${buildChatSystemPrompt(opts.webSearchEnabled ?? false, hasSources, batchEditDeleteEnabled)}\n\n# 检索到的笔记\n\n${context}${webSearchContext}`;
 
   // 4. Run the model with the full (truncated) conversation.
   const tools = buildToolsConfig();

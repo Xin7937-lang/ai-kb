@@ -491,4 +491,18 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    // v11: agent batch edit/delete guard setting.
+    //
+    // Seeds the default 'false' so existing databases get the same default
+    // as fresh installs. The guard is enforced in lib/ai/tools/batch-guard.ts.
+    version: 11,
+    name: 'agent_batch_edit_delete_enabled_default',
+    up: (db) => {
+      db.exec(`
+        INSERT OR IGNORE INTO settings (key, value)
+        VALUES ('agent_batch_edit_delete_enabled', 'false');
+      `);
+    },
+  },
 ];
