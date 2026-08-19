@@ -17,37 +17,58 @@ import type { CoreTool } from 'ai';
 
 import { getAgentBatchEditDeleteEnabled, getAgentToolLimit, getAgentToolsEnabled } from '@/lib/auth/init';
 
-import { createNoteTool } from './tools/create_note';
-import { readNoteTool } from './tools/read_note';
-import { editNoteTool } from './tools/edit_note';
-import { deleteNoteTool } from './tools/delete_note';
+import { makeCreateNoteTool } from './tools/create_note';
+import { makeReadNoteTool } from './tools/read_note';
+import { makeEditNoteTool } from './tools/edit_note';
+import { makeDeleteNoteTool } from './tools/delete_note';
 import { makeRateLimiter, withRateLimit } from './tools/rate-limit';
 import { makeBatchEditDeleteCounter, withBatchEditDeleteGuard } from './tools/batch-guard';
+import type { AgentAuditContext } from './tools/agent-audit';
 
 export type ToolsConfig = Record<string, CoreTool>;
 
-export function buildToolsConfig(): ToolsConfig {
+export function buildToolsConfig(
+  context: AgentAuditContext = {},
+): ToolsConfig {
   if (!getAgentToolsEnabled()) return {};
   const limiter = makeRateLimiter(getAgentToolLimit());
   const batchCounter = makeBatchEditDeleteCounter();
   const batchEnabled = getAgentBatchEditDeleteEnabled();
+  const createNoteTool = makeCreateNoteTool(context);
+  const readNoteTool = makeReadNoteTool(context);
+  const editNoteTool = makeEditNoteTool(context);
+  const deleteNoteTool = makeDeleteNoteTool(context);
   // withRateLimit preserves description / parameters / etc. via the
   // spread inside the helper and is generic in the input tool type,
   // so the returned CoreTool types flow through unchanged.
   return {
-    create_note: withRateLimit(createNoteTool, limiter),
-    read_note: withRateLimit(readNoteTool, limiter),
+    create_note: withRateLimit(createNoteTool, limiter, {
+      actionType: 'create_note',
+      context,
+    }),
+    read_note: withRateLimit(readNoteTool, limiter, {
+      actionType: 'read_note',
+      context,
+    }),
     edit_note: withBatchEditDeleteGuard(
-      withRateLimit(editNoteTool, limiter),
+      withRateLimit(editNoteTool, limiter, {
+        actionType: 'edit_note',
+        context,
+      }),
       batchCounter,
       batchEnabled,
       'edit_note',
+      context,
     ),
     delete_note: withBatchEditDeleteGuard(
-      withRateLimit(deleteNoteTool, limiter),
+      withRateLimit(deleteNoteTool, limiter, {
+        actionType: 'delete_note',
+        context,
+      }),
       batchCounter,
       batchEnabled,
       'delete_note',
+      context,
     ),
   };
 }

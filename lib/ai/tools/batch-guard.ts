@@ -9,7 +9,11 @@
 // Pattern mirrors `rate-limit.ts`: one shared counter per `buildToolsConfig()`
 // call, and a wrapper that overrides only `execute`.
 
-import { withAgentAudit } from './agent-audit';
+import {
+  recordAgentToolFailure,
+  serializeAgentToolParams,
+  type AgentAuditContext,
+} from './agent-audit';
 
 export const BATCH_EDIT_DELETE_DISABLED_CODE =
   'batch_edit_delete_disabled';
@@ -46,6 +50,7 @@ export function withBatchEditDeleteGuard<T extends AnyExecutableTool>(
   counter: BatchEditDeleteCounter,
   enabled: boolean,
   actionType: string,
+  context: AgentAuditContext = {},
 ): T {
   const inner = tool.execute.bind(tool) as (...args: any[]) => any;
   return {
@@ -53,29 +58,13 @@ export function withBatchEditDeleteGuard<T extends AnyExecutableTool>(
     execute: (async (...args: any[]) => {
       const callNum = counter.increment();
       if (!enabled && callNum > 1) {
-        const outcome = await withAgentAudit(
+        return recordAgentToolFailure(
           actionType,
-          JSON.stringify(args[0] ?? {}),
-          async () => ({
-            ok: false as const,
-            error: BATCH_EDIT_DELETE_DISABLED_CODE,
-            message: BATCH_EDIT_DELETE_DISABLED_MESSAGE,
-          }),
+          serializeAgentToolParams(args[0] ?? {}),
+          BATCH_EDIT_DELETE_DISABLED_CODE,
+          BATCH_EDIT_DELETE_DISABLED_MESSAGE,
+          context,
         );
-        if (!outcome.ok) {
-          return {
-            ok: false,
-            error: outcome.error,
-            message: outcome.message,
-          };
-        }
-        // outcome.ok should be unreachable here because the audited work
-        // always returns ok:false; fall back to a safe error payload.
-        return {
-          ok: false,
-          error: BATCH_EDIT_DELETE_DISABLED_CODE,
-          message: BATCH_EDIT_DELETE_DISABLED_MESSAGE,
-        };
       }
       return inner(...args);
     }) as T['execute'],

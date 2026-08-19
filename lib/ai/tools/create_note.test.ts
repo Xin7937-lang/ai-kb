@@ -25,6 +25,7 @@ process.env.APP_PASSWORD = 'cn-test';
 let executeHappy: { ok: boolean; noteId?: string; title?: string } | null = null;
 let notesRow: { id: string; title: string } | null = null;
 let agentActionsOkRow: {
+  conversation_id: string | null;
   result: string;
   target_note_id: string | null;
   error_message: string | null;
@@ -67,6 +68,7 @@ const cases: Case[] = [
       // Test env has no default embedding model configured, so the
       // tool falls back to the embedding-disabled result code.
       agentActionsOkRow.result === 'ok_with_embedding_disabled' &&
+      agentActionsOkRow.conversation_id === 'conv-create-test' &&
       agentActionsOkRow.target_note_id === executeHappy!.noteId &&
       agentActionsOkRow.error_message === null,
   },
@@ -108,11 +110,14 @@ async function main(): Promise<void> {
   const { migrate } = await import('../../db/migrate');
   const { getDb, closeDb } = await import('../../db/client');
   const { setAgentToolLimit } = await import('@/lib/auth/init');
-  const { createNoteTool } = await import('./create_note');
+  const { makeCreateNoteTool } = await import('./create_note');
   const { withAgentAudit } = await import('./agent-audit');
 
   try {
     migrate();
+    const createNoteTool = makeCreateNoteTool({
+      conversationId: 'conv-create-test',
+    });
 
     // ── execute happy path ──
     setAgentToolLimit(100); // ensure we don't accidentally hit any rate limit
@@ -130,11 +135,12 @@ async function main(): Promise<void> {
         .get(executeHappy.noteId) ?? null;
       agentActionsOkRow = db
         .prepare<[string], {
+          conversation_id: string | null;
           result: string;
           target_note_id: string | null;
           error_message: string | null;
         }>(
-          'SELECT result, target_note_id, error_message FROM agent_actions WHERE target_note_id = ? ORDER BY created_at DESC LIMIT 1',
+          'SELECT conversation_id, result, target_note_id, error_message FROM agent_actions WHERE target_note_id = ? ORDER BY created_at DESC LIMIT 1',
         )
         .get(executeHappy.noteId) ?? null;
     }

@@ -27,18 +27,25 @@ let successResult: unknown = null;
 let deletedAtAfterSuccess: number | null = null;
 let repeatResult: unknown = null;
 let nonexistentResult: unknown = null;
-let auditAfterDelete: { result: string; target_note_id: string | null; action_type: string } | null =
-  null;
+let auditAfterDelete: {
+  result: string;
+  target_note_id: string | null;
+  action_type: string;
+  conversation_id: string | null;
+} | null = null;
 
 async function main(): Promise<void> {
   const { migrate } = await import('../../db/migrate');
   const { getDb, closeDb } = await import('../../db/client');
   const { setAgentToolsEnabled } = await import('../../auth/init');
-  const { deleteNoteTool } = await import('./delete_note');
+  const { makeDeleteNoteTool } = await import('./delete_note');
 
   try {
     migrate();
     setAgentToolsEnabled(true);
+    const deleteNoteTool = makeDeleteNoteTool({
+      conversationId: 'conv-delete-test',
+    });
 
     const db = getDb();
     const now = Date.now();
@@ -66,8 +73,9 @@ async function main(): Promise<void> {
           result: string;
           target_note_id: string | null;
           action_type: string;
+          conversation_id: string | null;
         }>(
-          `SELECT result, target_note_id, action_type FROM agent_actions
+          `SELECT result, target_note_id, action_type, conversation_id FROM agent_actions
             WHERE action_type = 'delete_note'
               AND target_note_id IS NOT NULL
             ORDER BY created_at DESC LIMIT 1`,
@@ -107,6 +115,7 @@ async function main(): Promise<void> {
       check: () =>
         auditAfterDelete !== null &&
         auditAfterDelete.action_type === 'delete_note' &&
+        auditAfterDelete.conversation_id === 'conv-delete-test' &&
         auditAfterDelete.target_note_id === 'note-live' &&
         auditAfterDelete.result === 'ok',
     },

@@ -1,7 +1,7 @@
 // PUT /api/settings/agent-tools-enabled -- master toggle for the
 // /chat agent's tool-calling capability. When false, streamChat
-// runs text-only with no tools mounted; when true, create_note
-// and read_note tools are registered.
+// runs text-only with no tools mounted; when true, all four note
+// tools are registered.
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';

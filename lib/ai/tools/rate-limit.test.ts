@@ -5,12 +5,6 @@
 //
 // Run: npx tsx lib/ai/tools/rate-limit.test.ts
 
-import {
-  TOOL_LIMIT_EXCEEDED_CODE,
-  TOOL_LIMIT_EXCEEDED_MESSAGE,
-  makeRateLimiter,
-  withRateLimit,
-} from './rate-limit';
 // Local fixture type mirroring Vercel AI SDK's PromiseLike execute
 // signature so the wrapper's generics are inferred end-to-end.
 type Tool = {
@@ -35,6 +29,14 @@ let innerCallCountAfterOverflow: number | null = null;
 let resetCountOnFreshLimiter: number | null = null;
 
 async function main(): Promise<void> {
+  process.env.JWT_SECRET = 'a'.repeat(64);
+  process.env.ENCRYPTION_KEY = 'b'.repeat(64);
+  const {
+    TOOL_LIMIT_EXCEEDED_CODE,
+    makeRateLimiter,
+    withRateLimit,
+  } = await import('./rate-limit');
+
   // Independent limiters do not share state.
   const lA = makeRateLimiter(5);
   const lB = makeRateLimiter(2);

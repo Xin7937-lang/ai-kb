@@ -15,6 +15,12 @@
 // site can assign the return value to `Record<string, CoreTool>`
 // without an external cast.
 
+import {
+  recordAgentToolFailure,
+  serializeAgentToolParams,
+  type AgentAuditContext,
+} from './agent-audit';
+
 export const TOOL_LIMIT_EXCEEDED_CODE = 'tool_limit_exceeded';
 export const TOOL_LIMIT_EXCEEDED_MESSAGE = '工具调用次数超过限制';
 
@@ -55,6 +61,10 @@ type AnyExecutableTool = {
 export function withRateLimit<T extends AnyExecutableTool>(
   tool: T,
   limiter: RateLimiter,
+  audit?: {
+    actionType: string;
+    context?: AgentAuditContext;
+  },
 ): T {
   const inner = tool.execute.bind(tool) as (...args: any[]) => any;
   return {
@@ -62,6 +72,15 @@ export function withRateLimit<T extends AnyExecutableTool>(
     execute: (async (...args: any[]) => {
       const callNum = limiter.increment();
       if (callNum > limiter.max) {
+        if (audit) {
+          return recordAgentToolFailure(
+            audit.actionType,
+            serializeAgentToolParams(args[0] ?? {}),
+            TOOL_LIMIT_EXCEEDED_CODE,
+            TOOL_LIMIT_EXCEEDED_MESSAGE,
+            audit.context,
+          );
+        }
         return {
           ok: false,
           error: TOOL_LIMIT_EXCEEDED_CODE,

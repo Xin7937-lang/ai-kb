@@ -32,6 +32,7 @@ import { searchWeb } from '@/lib/search';
 import { getAgentBatchEditDeleteEnabled } from '@/lib/auth/init';
 import { buildToolsConfig } from './tools-config';
 import { mapStreamPartToSseEvent } from './chat-sse';
+import type { AgentAuditContext } from './tools/agent-audit';
 
 /**
  * Cap on how many prior user turns we feed to the model. 10 is well
@@ -57,6 +58,7 @@ export type ChatStreamResult = {
 export type StreamChatOptions = {
   modelId?: string;
   webSearchEnabled?: boolean;
+  conversationId?: string | null;
 };
 
 export async function streamChat(
@@ -145,7 +147,9 @@ export async function streamChat(
   const systemPrompt = `${buildChatSystemPrompt(opts.webSearchEnabled ?? false, hasSources, batchEditDeleteEnabled)}\n\n# 检索到的笔记\n\n${context}${webSearchContext}`;
 
   // 4. Run the model with the full (truncated) conversation.
-  const tools = buildToolsConfig();
+  const tools = buildToolsConfig({
+    conversationId: opts.conversationId,
+  } satisfies AgentAuditContext);
   const result = await streamText({
     model: client.chat(modelId),
     system: systemPrompt,

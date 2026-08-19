@@ -238,7 +238,10 @@ export function ChatWindow({ conversationId, onTurnSaved }: Props) {
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messages: history }),
+          body: JSON.stringify({
+            messages: history,
+            ...(conversationId ? { conversationId } : {}),
+          }),
         });
         if (!res.ok || !res.body) {
           const data = (await res.json().catch(() => ({}))) as {

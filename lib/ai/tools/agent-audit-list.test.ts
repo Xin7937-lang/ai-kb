@@ -31,6 +31,7 @@ let noConv: number | null = null;
 let filteredIds: string[] | null = null;
 let defaultLimit: number | null = null;
 let offsetSkip: string[] | null = null;
+let nullConversationId: string | null = null;
 
 async function main(): Promise<void> {
   const { migrate } = await import('../../db/migrate');
@@ -81,6 +82,8 @@ async function main(): Promise<void> {
     defaultLimit = listAgentActions({ limit: 100 }).length;
 
     offsetSkip = listAgentActions({ offset: 1, limit: 2 }).map((r) => r.id);
+    nullConversationId = listAgentActions({ limit: 1, offset: 4 })[0]
+      ?.conversationId ?? null;
   } finally {
     closeDb();
     if (existsSync(tmpDb)) unlinkSync(tmpDb);
@@ -129,6 +132,10 @@ async function main(): Promise<void> {
     {
       name: 'limit=100 returns all 5 (sanity check on filter shape)',
       check: () => defaultLimit === 5,
+    },
+    {
+      name: 'rows without a conversation keep conversationId=null',
+      check: () => nullConversationId === null,
     },
   ];
 
