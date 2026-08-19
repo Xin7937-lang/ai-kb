@@ -1,9 +1,6 @@
 // lib/ai/tools/agent-audit.ts
 //
-// Two-phase audit wrapper for agent tool *write* operations. Read-only
-// tools (read_note) deliberately opt out — they don't mutate state.
-//
-// Currently used by create_note; stage 2 will add edit_note / delete_note.
+// Two-phase audit wrapper for every agent tool execution.
 //
 // Lifecycle of a single agent action:
 //   1. INSERT pending row (actionId generated here).
@@ -28,6 +25,10 @@ export type AgentAuditResultCode =
   | 'ok'
   | 'ok_with_embedding_disabled'
   | 'error';
+
+export type AgentAuditContext = {
+  conversationId?: string | null;
+};
 
 export type AgentActionRow = {
   id: string;
@@ -56,12 +57,13 @@ export function listAgentActions(
 ): AgentActionRow[] {
   const limit = opts.limit ?? 20;
   const offset = opts.offset ?? 0;
+  const conversationId = opts.conversationId?.trim();
 
   const where: string[] = [];
   const params: unknown[] = [];
-  if (opts.conversationId) {
+  if (conversationId) {
     where.push('conversation_id = ?');
-    params.push(opts.conversationId);
+    params.push(conversationId);
   }
 
   let sql =
@@ -97,11 +99,12 @@ export function listAgentActions(
   }));
 }
 
-export type AgentWorkResult =
+export type AgentWorkResult<TPayload = undefined> =
   | {
       ok: true;
       targetNoteId: string | null;
       result: 'ok' | 'ok_with_embedding_disabled';
+      payload: TPayload;
     }
   | {
       ok: false;
@@ -109,8 +112,13 @@ export type AgentWorkResult =
       message: string;
     };
 
-export type AgentAuditOutcome =
-  | { ok: true; actionId: string; targetNoteId: string | null }
+export type AgentAuditOutcome<TPayload = undefined> =
+  | {
+      ok: true;
+      actionId: string;
+      targetNoteId: string | null;
+      payload: TPayload;
+    }
   | { ok: false; actionId: string; error: string; message: string };
 
 // Marks an existing agent_action row as terminal. Single UPDATE
@@ -139,17 +147,31 @@ export async function withAgentAudit(
   actionType: string,
   paramsJson: string,
   work: () => Promise<AgentWorkResult>,
-): Promise<AgentAuditOutcome> {
+  context?: AgentAuditContext,
+): Promise<AgentAuditOutcome>;
+export async function withAgentAudit<TPayload>(
+  actionType: string,
+  paramsJson: string,
+  work: () => Promise<AgentWorkResult<TPayload>>,
+  context?: AgentAuditContext,
+): Promise<AgentAuditOutcome<TPayload>>;
+export async function withAgentAudit<TPayload>(
+  actionType: string,
+  paramsJson: string,
+  work: () => Promise<AgentWorkResult<TPayload>>,
+  context: AgentAuditContext = {},
+): Promise<AgentAuditOutcome<TPayload>> {
   const actionId = nanoid(12);
   const createdAt = Date.now();
+  const conversationId = context.conversationId?.trim() || null;
 
   getDb()
     .prepare(
       `INSERT INTO agent_actions
-         (id, action_type, params_json, result, created_at)
-       VALUES (?, ?, ?, 'pending', ?)`,
+         (id, conversation_id, action_type, params_json, result, created_at)
+       VALUES (?, ?, ?, ?, 'pending', ?)`,
     )
-    .run(actionId, actionType, paramsJson, createdAt);
+    .run(actionId, conversationId, actionType, paramsJson, createdAt);
 
   try {
     const workResult = await work();
@@ -158,7 +180,12 @@ export async function withAgentAudit(
         targetNoteId: workResult.targetNoteId,
         errorMessage: null,
       });
-      return { ok: true, actionId, targetNoteId: workResult.targetNoteId };
+      return {
+        ok: true,
+        actionId,
+        targetNoteId: workResult.targetNoteId,
+        payload: workResult.payload,
+      };
     }
     markAgentActionResult(actionId, 'error', {
       targetNoteId: null,
@@ -181,4 +208,39 @@ export async function withAgentAudit(
     });
     return { ok: false, actionId, error: 'work_threw', message: msg };
   }
+}
+
+export function serializeAgentToolParams(value: unknown): string {
+  return JSON.stringify(value) ?? '{}';
+}
+
+export async function recordAgentToolFailure(
+  actionType: string,
+  paramsJson: string,
+  error: string,
+  message: string,
+  context: AgentAuditContext = {},
+): Promise<{ ok: false; error: string; message: string }> {
+  const outcome = await withAgentAudit(
+    actionType,
+    paramsJson,
+    async () => ({
+      ok: false as const,
+      error,
+      message,
+    }),
+    context,
+  );
+  if (!outcome.ok) {
+    return {
+      ok: false,
+      error: outcome.error,
+      message: outcome.message,
+    };
+  }
+
+  console.error(
+    '[agent-audit] rejection audit unexpectedly completed successfully',
+  );
+  throw new Error('agent_audit_rejection_unexpected_success');
 }

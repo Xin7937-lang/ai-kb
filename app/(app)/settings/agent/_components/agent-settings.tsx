@@ -5,7 +5,7 @@
 // history supports pagination (20 rows per page) and filtering by
 // conversation ID.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Bot, ChevronLeft, ChevronRight, History, Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -62,8 +62,11 @@ export function AgentSettings({
   const [conversationFilter, setConversationFilter] = useState('');
   const [appliedFilter, setAppliedFilter] = useState('');
   const [page, setPage] = useState(0);
+  const [auditReloadKey, setAuditReloadKey] = useState(0);
+  const auditRequestId = useRef(0);
 
   async function loadAudit(filter: string, offset: number) {
+    const requestId = ++auditRequestId.current;
     setAuditLoading(true);
     setAuditError(null);
     try {
@@ -79,16 +82,22 @@ export function AgentSettings({
         message?: string;
       };
       if (!res.ok || !json.data) {
+        if (requestId !== auditRequestId.current) return;
         setAuditError(json.message ?? json.error ?? '加载审计失败');
         setActions(null);
         return;
       }
+      if (requestId !== auditRequestId.current) return;
       setActions(json.data);
     } catch (err) {
+      if (requestId !== auditRequestId.current) return;
       console.error('[agent-settings] audit fetch failed:', err);
       setAuditError('网络错误，请重试');
+      setActions(null);
     } finally {
-      setAuditLoading(false);
+      if (requestId === auditRequestId.current) {
+        setAuditLoading(false);
+      }
     }
   }
 
@@ -96,11 +105,16 @@ export function AgentSettings({
   useEffect(() => {
     loadAudit(appliedFilter, page * PAGE_SIZE);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appliedFilter, page]);
+  }, [appliedFilter, page, auditReloadKey]);
 
   function applyFilter() {
+    const nextFilter = conversationFilter.trim();
+    const filterUnchanged = nextFilter === appliedFilter;
     setPage(0);
-    setAppliedFilter(conversationFilter.trim());
+    setAppliedFilter(nextFilter);
+    if (filterUnchanged && page === 0) {
+      setAuditReloadKey((key) => key + 1);
+    }
   }
 
   function goPrev() {
@@ -125,12 +139,19 @@ export function AgentSettings({
     })
       .then(async (res) => {
         const json = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
           error?: string;
           message?: string;
         };
         if (!res.ok) {
           setSaveStatus('error');
           setSaveError(json.message ?? json.error ?? '保存失败');
+          setEnabled(!next);
+          return;
+        }
+        if (json.ok !== true) {
+          setSaveStatus('error');
+          setSaveError('服务器未确认保存结果');
           setEnabled(!next);
           return;
         }
@@ -156,12 +177,19 @@ export function AgentSettings({
     })
       .then(async (res) => {
         const json = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
           error?: string;
           message?: string;
         };
         if (!res.ok) {
           setBatchSaveStatus('error');
           setBatchSaveError(json.message ?? json.error ?? '保存失败');
+          setBatchEditDeleteEnabled(!next);
+          return;
+        }
+        if (json.ok !== true) {
+          setBatchSaveStatus('error');
+          setBatchSaveError('服务器未确认保存结果');
           setBatchEditDeleteEnabled(!next);
           return;
         }
@@ -188,8 +216,8 @@ export function AgentSettings({
             Agent 工具调用
           </CardTitle>
           <CardDescription>
-            开启后，/chat 的 AI 可以调用 create_note（创建笔记）和
-            read_note（查找笔记）两个工具。关闭后回到纯文本回答。
+            开启后，/chat 的 AI 可以调用 read_note、create_note、edit_note 和
+            delete_note。关闭后回到纯文本回答。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -198,6 +226,7 @@ export function AgentSettings({
               id="agent-tools-enabled"
               checked={enabled}
               onCheckedChange={onToggle}
+              disabled={saveStatus === 'saving'}
             />
             <Label htmlFor="agent-tools-enabled" className="cursor-pointer">
               {enabled ? '已开启' : '已关闭'}
@@ -237,7 +266,7 @@ export function AgentSettings({
               id="agent-batch-edit-delete-enabled"
               checked={batchEditDeleteEnabled}
               onCheckedChange={onBatchEditDeleteToggle}
-              disabled={!enabled}
+              disabled={!enabled || batchSaveStatus === 'saving'}
             />
             <Label
               htmlFor="agent-batch-edit-delete-enabled"
@@ -318,6 +347,7 @@ export function AgentSettings({
                     <tr>
                       <th className="px-2 py-1.5 font-medium">时间</th>
                       <th className="px-2 py-1.5 font-medium">动作</th>
+                      <th className="px-2 py-1.5 font-medium">对话 ID</th>
                       <th className="px-2 py-1.5 font-medium">目标笔记</th>
                       <th className="px-2 py-1.5 font-medium">结果</th>
                       <th className="px-2 py-1.5 font-medium">说明</th>
@@ -330,6 +360,9 @@ export function AgentSettings({
                           {new Date(a.createdAt).toLocaleString('zh-CN')}
                         </td>
                         <td className="px-2 py-1.5 font-medium">{a.actionType}</td>
+                        <td className="max-w-40 truncate px-2 py-1.5 font-mono text-[11px]">
+                          {a.conversationId ?? '—'}
+                        </td>
                         <td className="px-2 py-1.5 font-mono text-[11px]">
                           {a.targetNoteId ?? '—'}
                         </td>

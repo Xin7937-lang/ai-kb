@@ -43,6 +43,7 @@ const Body = z.object({
     .min(1)
     .max(40),
   modelId: z.string().min(1).optional(),
+  conversationId: z.string().trim().min(1).max(64).optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -70,6 +71,7 @@ export async function POST(request: NextRequest) {
     result = await streamChat(parsed.data.messages, {
       modelId: parsed.data.modelId,
       webSearchEnabled: getChatWebSearchEnabled(),
+      conversationId: parsed.data.conversationId,
     });
   } catch (err) {
     if (err instanceof NoDefaultModelError) {

@@ -3,7 +3,7 @@
 // End-to-end smoke for the agent tool-calling pipeline (ticket 06).
 // Spins up a throwaway DB, calls streamChat() directly with a mocked
 // LLM endpoint, and asserts:
-//   - SSE events: sources, tool_call(create_note/edit_note/delete_note),
+//   - SSE events: sources, tool_call for all four note tools,
 //     tool_result, done
 //   - DB state: notes created / edited / soft-deleted, agent_actions rows
 //     with result='ok' and target_note_id set.
@@ -65,22 +65,31 @@ type Case = {
   check: () => boolean;
 };
 
-type Scenario = 'create' | 'edit' | 'delete';
+type Scenario = 'create' | 'read' | 'edit' | 'delete';
 
 let notesRow: { id: string; title: string } | null = null;
 let editedRow: { id: string; title: string } | null = null;
 let deletedRow: { id: string; deleted_at: number | null } | null = null;
 let createActionRow: {
+  conversation_id: string | null;
+  result: string;
+  target_note_id: string | null;
+  error_message: string | null;
+} | null = null;
+let readActionRow: {
+  conversation_id: string | null;
   result: string;
   target_note_id: string | null;
   error_message: string | null;
 } | null = null;
 let editActionRow: {
+  conversation_id: string | null;
   result: string;
   target_note_id: string | null;
   error_message: string | null;
 } | null = null;
 let deleteActionRow: {
+  conversation_id: string | null;
   result: string;
   target_note_id: string | null;
   error_message: string | null;
@@ -88,6 +97,7 @@ let deleteActionRow: {
 let embeddingRowCount: number | null = null;
 let eventTypes = '';
 let hasToolCallForCreateNote = false;
+let hasToolCallForReadNote = false;
 let hasToolCallForEditNote = false;
 let hasToolCallForDeleteNote = false;
 let hasToolResult = false;
@@ -96,6 +106,7 @@ let chatCallCount = 0;
 let embeddingCallCount = 0;
 let currentScenario: Scenario = 'create';
 let scenarioChatCallIndex = 0;
+const smokeConversationId = 'conv-smoke-agent';
 
 async function main(): Promise<void> {
   const { migrate } = await import('../lib/db/migrate');
@@ -193,6 +204,74 @@ async function main(): Promise<void> {
           }),
           chatChunk({
             choices: [{ index: 0, delta: { content: '笔记 smoke test。' } }],
+          }),
+          chatChunk({
+            choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+          }),
+          'data: [DONE]\n\n',
+        ]),
+      );
+    }
+
+    if (currentScenario === 'read') {
+      if (scenarioChatCallIndex === 1) {
+        return Promise.resolve(
+          sseResponse([
+            chatChunk({
+              choices: [
+                {
+                  index: 0,
+                  delta: {
+                    role: 'assistant',
+                    content: null,
+                    tool_calls: [
+                      {
+                        index: 0,
+                        id: 'call_smoke_read',
+                        type: 'function',
+                        function: { name: 'read_note', arguments: '' },
+                      },
+                    ],
+                  },
+                },
+              ],
+            }),
+            chatChunk({
+              choices: [
+                {
+                  index: 0,
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: 0,
+                        function: {
+                          arguments: '{"noteId":"note-read"}',
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            }),
+            chatChunk({
+              choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }],
+            }),
+            'data: [DONE]\n\n',
+          ]),
+        );
+      }
+      return Promise.resolve(
+        sseResponse([
+          chatChunk({
+            choices: [
+              {
+                index: 0,
+                delta: { role: 'assistant', content: '已读取' },
+              },
+            ],
+          }),
+          chatChunk({
+            choices: [{ index: 0, delta: { content: '笔记 note-read。' } }],
           }),
           chatChunk({
             choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
@@ -389,6 +468,17 @@ async function main(): Promise<void> {
       `INSERT INTO notes (id, title, content_json, content_text, summary, summary_state, created_at, updated_at)
        VALUES (?, ?, ?, ?, NULL, 'none', ?, ?)`,
     ).run(
+      'note-read',
+      'seed read',
+      '{"type":"doc"}',
+      'seed read content',
+      now,
+      now,
+    );
+    db.prepare(
+      `INSERT INTO notes (id, title, content_json, content_text, summary, summary_state, created_at, updated_at)
+       VALUES (?, ?, ?, ?, NULL, 'none', ?, ?)`,
+    ).run(
       'note-delete',
       'seed delete',
       '{"type":"doc"}',
@@ -404,14 +494,21 @@ async function main(): Promise<void> {
       { role: 'user', content: '请帮我创建一个测试笔记，标题 smoke test。' },
     ]);
 
-    // ----- Scenario 2: edit_note -----
+    // ----- Scenario 2: read_note -----
+    currentScenario = 'read';
+    scenarioChatCallIndex = 0;
+    await runScenario(streamChat, [
+      { role: 'user', content: '请读取 note-read。' },
+    ]);
+
+    // ----- Scenario 3: edit_note -----
     currentScenario = 'edit';
     scenarioChatCallIndex = 0;
     await runScenario(streamChat, [
       { role: 'user', content: '请把 note-edit 的标题改成 smoke edited。' },
     ]);
 
-    // ----- Scenario 3: delete_note -----
+    // ----- Scenario 4: delete_note -----
     currentScenario = 'delete';
     scenarioChatCallIndex = 0;
     await runScenario(streamChat, [
@@ -446,13 +543,29 @@ async function main(): Promise<void> {
     createActionRow =
       db
         .prepare<[], {
+          conversation_id: string | null;
           result: string;
           target_note_id: string | null;
           error_message: string | null;
         }>(
-          `SELECT result, target_note_id, error_message
+          `SELECT conversation_id, result, target_note_id, error_message
              FROM agent_actions
             WHERE action_type = 'create_note'
+            ORDER BY created_at DESC LIMIT 1`,
+        )
+        .get() ?? null;
+
+    readActionRow =
+      db
+        .prepare<[], {
+          conversation_id: string | null;
+          result: string;
+          target_note_id: string | null;
+          error_message: string | null;
+        }>(
+          `SELECT conversation_id, result, target_note_id, error_message
+             FROM agent_actions
+            WHERE action_type = 'read_note'
             ORDER BY created_at DESC LIMIT 1`,
         )
         .get() ?? null;
@@ -460,11 +573,12 @@ async function main(): Promise<void> {
     editActionRow =
       db
         .prepare<[], {
+          conversation_id: string | null;
           result: string;
           target_note_id: string | null;
           error_message: string | null;
         }>(
-          `SELECT result, target_note_id, error_message
+          `SELECT conversation_id, result, target_note_id, error_message
              FROM agent_actions
             WHERE action_type = 'edit_note'
             ORDER BY created_at DESC LIMIT 1`,
@@ -474,11 +588,12 @@ async function main(): Promise<void> {
     deleteActionRow =
       db
         .prepare<[], {
+          conversation_id: string | null;
           result: string;
           target_note_id: string | null;
           error_message: string | null;
         }>(
-          `SELECT result, target_note_id, error_message
+          `SELECT conversation_id, result, target_note_id, error_message
              FROM agent_actions
             WHERE action_type = 'delete_note'
             ORDER BY created_at DESC LIMIT 1`,
@@ -505,8 +620,8 @@ async function main(): Promise<void> {
 
   const cases: Case[] = [
     {
-      name: 'mock chat endpoint was called at least 6 times (3 scenarios × 2 calls)',
-      check: () => chatCallCount >= 6,
+      name: 'mock chat endpoint was called at least 8 times (4 scenarios × 2 calls)',
+      check: () => chatCallCount >= 8,
     },
     {
       name: 'mock embedding endpoint was called at least once',
@@ -515,6 +630,10 @@ async function main(): Promise<void> {
     {
       name: 'SSE events included tool_call for create_note',
       check: () => hasToolCallForCreateNote,
+    },
+    {
+      name: 'SSE events included tool_call for read_note',
+      check: () => hasToolCallForReadNote,
     },
     {
       name: 'SSE events included tool_call for edit_note',
@@ -540,6 +659,7 @@ async function main(): Promise<void> {
       name: 'DB has agent_actions row for create_note with result="ok" and target_note_id set',
       check: () =>
         createActionRow !== null &&
+        createActionRow.conversation_id === smokeConversationId &&
         createActionRow.result === 'ok' &&
         createActionRow.target_note_id !== null &&
         createActionRow.error_message === null,
@@ -559,6 +679,7 @@ async function main(): Promise<void> {
       name: 'DB has agent_actions row for edit_note with result="ok" and target_note_id=note-edit',
       check: () =>
         editActionRow !== null &&
+        editActionRow.conversation_id === smokeConversationId &&
         editActionRow.result === 'ok' &&
         editActionRow.target_note_id === 'note-edit' &&
         editActionRow.error_message === null,
@@ -574,9 +695,19 @@ async function main(): Promise<void> {
       name: 'DB has agent_actions row for delete_note with result="ok" and target_note_id=note-delete',
       check: () =>
         deleteActionRow !== null &&
+        deleteActionRow.conversation_id === smokeConversationId &&
         deleteActionRow.result === 'ok' &&
         deleteActionRow.target_note_id === 'note-delete' &&
         deleteActionRow.error_message === null,
+    },
+    {
+      name: 'DB has agent_actions row for read_note with conversation and target_note_id',
+      check: () =>
+        readActionRow !== null &&
+        readActionRow.conversation_id === smokeConversationId &&
+        readActionRow.result === 'ok' &&
+        readActionRow.target_note_id === 'note-read' &&
+        readActionRow.error_message === null,
     },
     {
       name: 'note_chunks has rows for the created note (embedding path executed)',
@@ -623,7 +754,9 @@ async function runScenario(
 ): Promise<void> {
   let result: Awaited<ReturnType<typeof streamChat>>;
   try {
-    result = await streamChat(messages);
+    result = await streamChat(messages, {
+      conversationId: smokeConversationId,
+    });
   } catch (err) {
     console.error('[smoke-agent] streamChat threw:', err);
     throw err;
@@ -649,6 +782,9 @@ async function runScenario(
           if (t) eventTypes += `${t},`;
           if (t === 'tool_call' && data['toolName'] === 'create_note') {
             hasToolCallForCreateNote = true;
+          }
+          if (t === 'tool_call' && data['toolName'] === 'read_note') {
+            hasToolCallForReadNote = true;
           }
           if (t === 'tool_call' && data['toolName'] === 'edit_note') {
             hasToolCallForEditNote = true;

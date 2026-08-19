@@ -19,7 +19,7 @@ const QuerySchema = z.object({
     .max(100)
     .optional(),
   offset: z.coerce.number().int().min(0).optional(),
-  conversationId: z.string().min(1).max(64).optional(),
+  conversationId: z.string().trim().min(1).max(64).optional(),
 });
 
 export async function GET(request: NextRequest) {

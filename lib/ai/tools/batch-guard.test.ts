@@ -34,11 +34,19 @@ let innerCallCountAfterDisabled = 0;
 let innerCallCountTotal = 0;
 let rejectedActionRow: {
   action_type: string;
+  conversation_id: string | null;
   result: string;
   error_message: string | null;
 } | null = null;
 let enabledSecondResult: unknown = null;
 let freshFirstResult: unknown = null;
+let rateLimitResult: unknown = null;
+let rateLimitActionRow: {
+  action_type: string;
+  conversation_id: string | null;
+  result: string;
+  error_message: string | null;
+} | null = null;
 
 async function main(): Promise<void> {
   const { migrate } = await import('../../db/migrate');
@@ -49,6 +57,11 @@ async function main(): Promise<void> {
     makeBatchEditDeleteCounter,
     withBatchEditDeleteGuard,
   } = await import('./batch-guard');
+  const {
+    TOOL_LIMIT_EXCEEDED_CODE,
+    makeRateLimiter,
+    withRateLimit,
+  } = await import('./rate-limit');
 
   try {
     migrate();
@@ -76,6 +89,7 @@ async function main(): Promise<void> {
       counter,
       false,
       'delete_note',
+      { conversationId: 'conv-batch-test' },
     );
 
     // First edit passes.
@@ -90,7 +104,7 @@ async function main(): Promise<void> {
     const db = getDb();
     rejectedActionRow = db
       .prepare(
-        `SELECT action_type, result, error_message
+        `SELECT action_type, conversation_id, result, error_message
            FROM agent_actions
           WHERE result = 'error' AND action_type = 'delete_note'
           ORDER BY created_at DESC
@@ -98,6 +112,7 @@ async function main(): Promise<void> {
       )
       .get() as {
         action_type: string;
+        conversation_id: string | null;
         result: string;
         error_message: string | null;
       } | null;
@@ -122,6 +137,26 @@ async function main(): Promise<void> {
       'edit_note',
     );
     freshFirstResult = await freshWrapped.execute({ noteId: 'z' });
+
+    const rateLimited = withRateLimit(tool, makeRateLimiter(0), {
+      actionType: 'read_note',
+      context: { conversationId: 'conv-rate-limit-test' },
+    });
+    rateLimitResult = await rateLimited.execute({ noteId: 'limit' });
+    rateLimitActionRow = db
+      .prepare(
+        `SELECT action_type, conversation_id, result, error_message
+           FROM agent_actions
+          WHERE result = 'error' AND action_type = 'read_note'
+          ORDER BY created_at DESC
+          LIMIT 1`,
+      )
+      .get() as {
+        action_type: string;
+        conversation_id: string | null;
+        result: string;
+        error_message: string | null;
+      } | null;
   } finally {
     closeDb();
     if (existsSync(tmpDb)) unlinkSync(tmpDb);
@@ -169,6 +204,7 @@ async function main(): Promise<void> {
       check: () =>
         rejectedActionRow !== null &&
         rejectedActionRow.action_type === 'delete_note' &&
+        rejectedActionRow.conversation_id === 'conv-batch-test' &&
         rejectedActionRow.result === 'error' &&
         rejectedActionRow.error_message ===
           '批量编辑/删除已禁用。同一轮对话中只能执行一次 edit_note 或 delete_note。' +
@@ -188,6 +224,24 @@ async function main(): Promise<void> {
         typeof freshFirstResult === 'object' &&
         freshFirstResult !== null &&
         (freshFirstResult as { ok?: unknown }).ok === true,
+    },
+    {
+      name: 'rate-limit overflow returns the standard error code',
+      check: () =>
+        typeof rateLimitResult === 'object' &&
+        rateLimitResult !== null &&
+        (rateLimitResult as { ok?: unknown }).ok === false &&
+        (rateLimitResult as { error?: unknown }).error ===
+          TOOL_LIMIT_EXCEEDED_CODE,
+    },
+    {
+      name: 'rate-limit overflow writes an audited row with conversation ID',
+      check: () =>
+        rateLimitActionRow !== null &&
+        rateLimitActionRow.action_type === 'read_note' &&
+        rateLimitActionRow.conversation_id === 'conv-rate-limit-test' &&
+        rateLimitActionRow.result === 'error' &&
+        rateLimitActionRow.error_message === '工具调用次数超过限制',
     },
   ];
 

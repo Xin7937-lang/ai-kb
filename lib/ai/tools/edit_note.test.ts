@@ -35,18 +35,26 @@ let multiFieldNewText: string | null = null;
 let nonexistentResult: unknown = null;
 let softDeletedResult: unknown = null;
 let emptyUpdatesResult: unknown = null;
-let auditAfterEdit: { result: string; target_note_id: string | null; action_type: string } | null =
-  null;
+let auditAfterEdit: {
+  result: string;
+  target_note_id: string | null;
+  action_type: string;
+  conversation_id: string | null;
+} | null = null;
+let auditConversationId: string | null = null;
 
 async function main(): Promise<void> {
   const { migrate } = await import('../../db/migrate');
   const { getDb, closeDb } = await import('../../db/client');
   const { setAgentToolsEnabled } = await import('../../auth/init');
-  const { editNoteTool } = await import('./edit_note');
+  const { makeEditNoteTool } = await import('./edit_note');
 
   try {
     migrate();
     setAgentToolsEnabled(true);
+    const editNoteTool = makeEditNoteTool({
+      conversationId: 'conv-edit-test',
+    });
 
     const db = getDb();
     const now = Date.now();
@@ -137,14 +145,16 @@ async function main(): Promise<void> {
           result: string;
           target_note_id: string | null;
           action_type: string;
+          conversation_id: string | null;
         }>(
-          `SELECT result, target_note_id, action_type FROM agent_actions
+          `SELECT result, target_note_id, action_type, conversation_id FROM agent_actions
             WHERE action_type = 'edit_note'
               AND target_note_id IS NOT NULL
               AND result IN ('ok', 'ok_with_embedding_disabled')
             ORDER BY created_at ASC LIMIT 1`,
         )
         .get() ?? null;
+    auditConversationId = auditAfterEdit?.conversation_id ?? null;
   } finally {
     closeDb();
     if (existsSync(tmpDb)) unlinkSync(tmpDb);
@@ -215,6 +225,7 @@ async function main(): Promise<void> {
       check: () =>
         auditAfterEdit !== null &&
         auditAfterEdit.action_type === 'edit_note' &&
+        auditConversationId === 'conv-edit-test' &&
         auditAfterEdit.target_note_id === 'note-1' &&
         (auditAfterEdit.result === 'ok' ||
           auditAfterEdit.result === 'ok_with_embedding_disabled'),

@@ -30,6 +30,14 @@ let hitByIdResult: unknown = null;
 let missByIdResult: unknown = null;
 let queryHitsResult: unknown = null;
 let queryEmptyResult: unknown = null;
+let invalidResult: unknown = null;
+let auditRows: Array<{
+  action_type: string;
+  conversation_id: string | null;
+  target_note_id: string | null;
+  result: string;
+  error_message: string | null;
+}> = [];
 let schemaAcceptsNoteId: boolean | null = null;
 let schemaAcceptsQuery: boolean | null = null;
 let schemaAcceptsBoth: boolean | null = null;
@@ -38,10 +46,13 @@ let schemaRejectsNeither: boolean | null = null;
 async function main(): Promise<void> {
   const { migrate } = await import('../../db/migrate');
   const { getDb, closeDb } = await import('../../db/client');
-  const { readNoteTool } = await import('./read_note');
+  const { makeReadNoteTool } = await import('./read_note');
 
   try {
     migrate();
+    const readNoteTool = makeReadNoteTool({
+      conversationId: 'conv-read-test',
+    });
 
     // Seed two test notes (FTS5 triggers auto-populate notes_fts).
     const db = getDb();
@@ -73,6 +84,22 @@ async function main(): Promise<void> {
     // Execute by query (hits + zero results)
     queryHitsResult = await readNoteTool.execute({ query: 'database' }, {});
     queryEmptyResult = await readNoteTool.execute({ query: 'absolutely nothing matches this xyzzy' }, {});
+    invalidResult = await readNoteTool.execute({}, {});
+
+    auditRows = db
+      .prepare<[], {
+        action_type: string;
+        conversation_id: string | null;
+        target_note_id: string | null;
+        result: string;
+        error_message: string | null;
+      }>(
+        `SELECT action_type, conversation_id, target_note_id, result, error_message
+           FROM agent_actions
+          WHERE action_type = 'read_note'
+          ORDER BY created_at ASC`,
+      )
+      .all();
   } finally {
     closeDb();
     if (existsSync(tmpDb)) unlinkSync(tmpDb);
@@ -143,6 +170,40 @@ async function main(): Promise<void> {
           r.results.length === 0
         );
       },
+    },
+    {
+      name: 'invalid arguments return {ok: false, error: "invalid_arguments"}',
+      check: () =>
+        (invalidResult as { ok?: boolean; error?: string } | null)?.ok ===
+          false &&
+        (invalidResult as { error?: string } | null)?.error ===
+          'invalid_arguments',
+    },
+    {
+      name: 'all read_note calls are audited with the conversation ID',
+      check: () =>
+        auditRows.length === 5 &&
+        auditRows.every(
+          (row) =>
+            row.action_type === 'read_note' &&
+            row.conversation_id === 'conv-read-test',
+        ),
+    },
+    {
+      name: 'read_note audit rows preserve success, miss, empty search, and validation outcomes',
+      check: () =>
+        auditRows.length === 5 &&
+        auditRows[0]?.result === 'ok' &&
+        auditRows[0]?.target_note_id === 'note-alpha' &&
+        auditRows[1]?.result === 'error' &&
+        auditRows[1]?.error_message?.includes('not found or deleted') === true &&
+        auditRows[2]?.result === 'ok' &&
+        auditRows[2]?.target_note_id === null &&
+        auditRows[3]?.result === 'ok' &&
+        auditRows[3]?.target_note_id === null &&
+        auditRows[4]?.result === 'error' &&
+        typeof auditRows[4]?.error_message === 'string' &&
+        auditRows[4].error_message.length > 0,
     },
   ];
 
