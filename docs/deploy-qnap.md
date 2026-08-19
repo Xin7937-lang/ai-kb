@@ -77,6 +77,7 @@ docker load -i ai-kb.tar
 > 文中 `/share/Container/ai-kb` 是示例路径，你可以换成自己的，比如 `/share/my-docker/ai-kb`，只要 `docker run` 里的 `-v` 挂载保持一致即可。
 
 > 加 `--platform linux/amd64` 可以彻底避免 `better-sqlite3` 的 `Exec format error`，省掉每次进容器 `apk add + npm rebuild` 的步骤。
+> 注意：如果构建环境是 ARM Windows、或 `buildx` 没初始化导致 `--platform` 静默失效，仍然会落到 5.3 节的"修法 C"，请按那里配 npmmirror。
 
 ### 方式 B：在 NAS 上直接构建（不需要传 tar）
 
@@ -268,6 +269,8 @@ stat -c '%U %u %a' /share/Container/ai-kb/.env
 
 ### 5.3 `better-sqlite3` 架构不匹配（`Exec format error`）
 
+> 详细排查过程、试错的三个修法、最终落地的 npmmirror 方案、以及踩坑记录见 [`deploy-qnap-better-sqlite3-rebuild.md`](./deploy-qnap-better-sqlite3-rebuild.md)。
+
 **症状**：`npm run bootstrap` 报
 
 ```
@@ -312,13 +315,31 @@ cd ai-kb-src
 docker build -f docker/Dockerfile -t ai-kb:latest .
 ```
 
-**修法 C（fallback）**：在容器内重 build native 模块
+**修法 C（fallback）**：在容器内用国内镜像重 build native 模块
+
+适用：开发机是 ARM Windows（Surface Pro X 等），或 `--platform linux/amd64` 因为 `buildx` 没初始化等原因静默失效。前提：NAS 容器能访问 `registry.npmmirror.com` 和 `npmmirror.com`（国内 NAS 默认通；国内云厂商 NAS 一般也通）。
 
 ```bash
+# 1. 写 .npmrc：npm 默认 registry + node-gyp 拉 headers 的 disturl 都改走国内镜像
+docker exec -u root ai-kb sh -c '
+cat > /app/.npmrc << "EOF"
+registry=https://registry.npmmirror.com
+disturl=https://npmmirror.com/mirrors/node
+EOF
+'
+
+# 2. 装编译工具（已装可跳过）
 docker exec -u root ai-kb apk add --no-cache python3 build-base
-docker exec -u root ai-kb npm rebuild better-sqlite3
+
+# 3. --build-from-source 跳过 prebuild-install（它去 GitHub release 拉 prebuilt，NAS 慢/不稳），
+#    直接走 node-gyp 编译。node-gyp 拉 headers 时会读 .npmrc 里的 disturl。
+docker exec -u root ai-kb npm rebuild better-sqlite3 --build-from-source
+
+# 4. 初始化
+docker exec -it ai-kb npm run bootstrap
 ```
 
+> `disturl` 不能用 `npm config set`（npm 10+ 已禁），必须写 `.npmrc` 或传 `npm_config_disturl` 环境变量；否则会报 `disturl is not a valid npm option`。
 > 修法 C 每次升级镜像都要重做。修法 A/B 一次解决。
 
 ### 5.4 `data/` / `uploads/` / `backups/` 目录 owner 不对
